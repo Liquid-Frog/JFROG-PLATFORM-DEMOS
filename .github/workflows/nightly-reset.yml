@@ -1,0 +1,107 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# nightly-reset.yml — Nightly demo environment reset
+#
+# Runs every night at 02:00 UTC so the SwiftShip demo instance is clean and
+# freshly seeded with vulnerable packages for the next day's customer sessions.
+# Can also be triggered manually at any time from the GitHub Actions UI.
+#
+# What it does (in order):
+#   1. Wipes all artifacts from the demo Artifactory repos (reset.sh --wipe)
+#   2. Clears Xray scan cache / re-triggers indexing
+#   3. Re-seeds all SwiftShip services with intentionally vulnerable packages
+#      so CVE findings are ready to demonstrate (prep.sh)
+#   4. Sends a Slack notification to SLACK_WEBHOOK_URL on success or failure
+#      (skipped silently if the secret is not configured)
+#
+# Secrets required:
+#   JFROG_URL         — JFrog instance URL
+#   JFROG_TOKEN       — access token with Admin or Project-Admin permissions
+#   JFROG_USER        — user email (for jf config)
+#   SLACK_WEBHOOK_URL — Slack incoming webhook URL (optional)
+#
+# Repo variables (optional):
+#   JFROG_PROJECT_KEY — project key for shared-instance namespacing
+#   JFROG_REPO_PREFIX — repo prefix (default: "demo")
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Nightly Demo Reset
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # 02:00 UTC every night
+
+  workflow_dispatch:
+    inputs:
+      skip_prep:
+        description: 'Skip prep.sh after wipe (wipe only, no re-seed)'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    name: Reset and re-seed demo environment
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # reset.sh and prep.sh both source .env from the repo root.
+      # We materialize it here from secrets so the scripts work unmodified.
+      - name: Create .env from repository secrets
+        run: |
+          cat > .env << 'ENVEOF'
+          JFROG_URL=${{ secrets.JFROG_URL }}
+          JFROG_TOKEN=${{ secrets.JFROG_TOKEN }}
+          JFROG_USER=${{ secrets.JFROG_USER }}
+          JFROG_PROJECT_KEY=${{ vars.JFROG_PROJECT_KEY }}
+          JFROG_REPO_PREFIX=${{ vars.JFROG_REPO_PREFIX || 'demo' }}
+          SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL }}
+          ENVEOF
+
+      - name: Set up JFrog CLI
+        uses: jfrog/setup-jfrog-cli@v4
+        with:
+          jfrog-url: ${{ secrets.JFROG_URL }}
+          oidc-provider-name: ${{ vars.JFROG_OIDC_PROVIDER_NAME }}
+        env:
+          JF_ACCESS_TOKEN: ${{ secrets.JFROG_TOKEN }}
+
+      # reset.sh has an interactive confirmation prompt — pipe "y" to bypass it.
+      # --wipe deletes artifacts and clears Xray cache without calling prep.sh
+      # again at the end (we call prep.sh explicitly in the next step).
+      - name: Wipe demo artifacts and Xray cache
+        run: echo "y" | ./setup/reset.sh --wipe
+
+      - name: Re-seed SwiftShip with vulnerable packages
+        if: ${{ github.event.inputs.skip_prep != 'true' }}
+        run: ./setup/prep.sh
+
+      # Send a Slack notification if SLACK_WEBHOOK_URL is configured.
+      # Runs on both success and failure so on-call SolEng knows the outcome.
+      - name: Notify Slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          JOB_STATUS:        ${{ job.status }}
+          RUN_URL:           ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [[ -z "$SLACK_WEBHOOK_URL" ]]; then
+            echo "SLACK_WEBHOOK_URL not configured — skipping notification."
+            exit 0
+          fi
+
+          if [[ "$JOB_STATUS" == "success" ]]; then
+            ICON=":white_check_mark:"
+            TEXT="SwiftShip nightly reset *succeeded* — demo is ready for today's sessions."
+          else
+            ICON=":x:"
+            TEXT="SwiftShip nightly reset *FAILED* — CVE findings may be stale. <$RUN_URL|View logs>"
+          fi
+
+          curl -s -f -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data "{\"text\":\"$ICON $TEXT\"}"

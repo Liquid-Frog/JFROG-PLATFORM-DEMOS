@@ -1,0 +1,38 @@
+{
+  "general_data": {
+    "name": "${PREFIX}-npm-watch",
+    "description": "Xray watch for SwiftShip npm demo — scoped to npm dev/stage/prod repos",
+    "active": true
+  },
+  "project_resources": {
+    "resources": [
+      {
+        "type": "repository",
+        "name": "${REPO_DEV}",
+        "filters": [
+          { "type": "package-type", "value": "Npm" }
+        ]
+      },
+      {
+        "type": "repository",
+        "name": "${REPO_STAGE}",
+        "filters": [
+          { "type": "package-type", "value": "Npm" }
+        ]
+      },
+      {
+        "type": "repository",
+        "name": "${REPO_PROD}",
+        "filters": [
+          { "type": "package-type", "value": "Npm" }
+        ]
+      }
+    ]
+  },
+  "assigned_policies": [
+    {
+      "name": "${PREFIX}-npm-policy",
+      "type": "security"
+    }
+  ]
+}

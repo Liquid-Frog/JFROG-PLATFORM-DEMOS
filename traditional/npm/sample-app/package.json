@@ -1,0 +1,25 @@
+{
+  "name": "@swiftship/storefront-demo",
+  "version": "1.0.0",
+  "description": "SwiftShip npm demo — intentionally vulnerable for Xray / Curation demonstration",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"No tests in demo app\" && exit 0"
+  },
+  "_vuln_seeds": {
+    "cross-spawn@7.0.3": "VULN-SEED (CVE): cross-spawn 7.0.3 — CVE-2024-21538 (ReDoS in argument parsing, CVSS 7.5) — Fix: cross-spawn@7.0.5",
+    "@nx/devkit@19.5.0": "VULN-SEED (Curation): @nx/devkit 19.5.0 — CVE-2025-10894 (Shai-Hulud supply-chain campaign) — Fix: blocked by Curation before install; upgrade once a clean version is available"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cross-spawn": "7.0.3",
+    "@nx/devkit": "19.5.0",
+    "@eslint/plugin-kit": "0.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["demo", "swiftship"],
+  "license": "MIT"
+}

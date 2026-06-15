@@ -1,0 +1,52 @@
+# SwiftShip payments-service Deployment
+# Intentional security misconfigs are seeded here for the JAS IaC scan demo.
+# Every security seed below corresponds to a JAS finding that will be surfaced in the scan results.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-service
+  labels:
+    app: payments-service
+    app.kubernetes.io/part-of: swiftship
+    app.kubernetes.io/version: {{ .Values.paymentsService.image.tag | quote }}
+spec:
+  replicas: {{ .Values.paymentsService.replicas }}
+  selector:
+    matchLabels:
+      app: payments-service
+  template:
+    metadata:
+      labels:
+        app: payments-service
+    spec:
+      # VULN-SEED (JAS-IaC): no imagePullPolicy set — defaults to IfNotPresent, serving a stale cached image instead of the latest promoted artifact — Fix: set imagePullPolicy: Always for release tags pulled from a promotion pipeline
+      imagePullSecrets:
+        {{- range .Values.global.imagePullSecrets }}
+        - name: {{ .name }}
+        {{- end }}
+      containers:
+        - name: payments-service
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.paymentsService.image.repository }}:{{ .Values.paymentsService.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.paymentsService.service.port }}
+              protocol: TCP
+          securityContext:
+            # VULN-SEED (JAS-IaC): runAsNonRoot is false — container runs as UID 0 (root) — Fix: set runAsNonRoot: true and runAsUser: 1000 to enforce a non-root UID
+            runAsNonRoot: {{ .Values.paymentsService.securityContext.runAsNonRoot }}
+            # VULN-SEED (JAS-IaC): allowPrivilegeEscalation is true — enables sudo/setuid binaries to escalate to root inside the container — Fix: set allowPrivilegeEscalation: false
+            allowPrivilegeEscalation: {{ .Values.paymentsService.securityContext.allowPrivilegeEscalation }}
+            # VULN-SEED (JAS-IaC): readOnlyRootFilesystem is false — container can write to its own filesystem, making malware persistence easier — Fix: set readOnlyRootFilesystem: true and mount tmpfs for any writable paths
+            readOnlyRootFilesystem: {{ .Values.paymentsService.securityContext.readOnlyRootFilesystem }}
+          env:
+            # VULN-SEED (JAS-Secret): DB_PASSWORD is a plaintext credential in values.yaml — appears in Helm release history and `helm get values` — Fix: replace with secretKeyRef pointing to a Kubernetes Secret, or use External Secrets Operator with AWS Secrets Manager / Vault
+            {{- range .Values.paymentsService.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"

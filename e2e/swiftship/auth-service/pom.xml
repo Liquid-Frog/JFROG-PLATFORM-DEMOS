@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <!-- VULN-SEED (CVE): spring-boot 2.7.x brings spring-webmvc 5.3.35 — CVE-2024-38816 (path traversal, CVSS 7.5) — Fix: upgrade spring-boot-starter-parent to 3.2.x+ -->
+    <version>2.7.18</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.swiftship</groupId>
+  <artifactId>auth-service</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <name>SwiftShip Auth Service</name>
+  <description>JWT authentication and session management for SwiftShip platform</description>
+
+  <properties>
+    <java.version>17</java.version>
+    <!-- VULN-SEED (CVE): spring-security 6.2.3 — CVE-2025-41248 (authorization bypass, CVSS 9.1) — Fix: upgrade spring-security.version to 6.3.3+ -->
+    <spring-security.version>6.2.3</spring-security.version>
+  </properties>
+
+  <dependencies>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- VULN-SEED (CVE): spring-security-core 6.2.3 — CVE-2025-41248 (authorization bypass, CVSS 9.1) — Fix: upgrade to 6.3.3+ -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-core</artifactId>
+      <version>6.2.3</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+
+    <!-- VULN-SEED (CVE): spring-core 6.1.6 — CVE-2025-41234 (RCE via serialized object injection, CVSS 9.8, CISA KEV) — Fix: upgrade to 6.1.14+ -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-core</artifactId>
+      <version>6.1.6</version>
+    </dependency>
+
+    <!-- JWT library -->
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-api</artifactId>
+      <version>0.11.5</version>
+    </dependency>
+    <dependency>
+      <groupId>io.jsonwebtoken</groupId>
+      <artifactId>jjwt-impl</artifactId>
+      <version>0.11.5</version>
+      <scope>runtime</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

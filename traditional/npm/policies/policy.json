@@ -1,0 +1,48 @@
+{
+  "name": "${PREFIX}-npm-policy",
+  "type": "security",
+  "description": "SwiftShip npm demo policy — blocks CVSS >= 7.5 (catches CVE-2024-21538)",
+  "rules": [
+    {
+      "name": "npm-high-cvss-block",
+      "priority": 1,
+      "criteria": {
+        "min_severity": "high",
+        "cvss_range": {
+          "from": 7.5,
+          "to": 10.0
+        }
+      },
+      "actions": {
+        "fail_build": true,
+        "block_release_bundle_distribution": true,
+        "block_release_bundle_promotion": true,
+        "notify_deployer": true,
+        "notify_watch_recipients": true,
+        "webhooks": [],
+        "mails": [],
+        "create_ticket_enabled": false
+      }
+    },
+    {
+      "name": "npm-supply-chain-malicious-block",
+      "priority": 2,
+      "criteria": {
+        "malicious_package": true
+      },
+      "actions": {
+        "fail_build": true,
+        "block_download": {
+          "active": true,
+          "unscanned": false
+        },
+        "block_release_bundle_distribution": true,
+        "block_release_bundle_promotion": true,
+        "notify_deployer": true,
+        "notify_watch_recipients": true,
+        "webhooks": [],
+        "mails": []
+      }
+    }
+  ]
+}

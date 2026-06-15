@@ -1,0 +1,26 @@
+# SwiftShip Booking Service Demo — Python dependencies
+# Intentionally vulnerable for JFrog Xray / CISA KEV demonstration
+# See traditional/pypi/demo.sh for the live demo flow.
+
+# VULN-SEED (CVE): starlette 0.36.3 — CVE-2024-47874 (unbounded multipart body read, DoS, CVSS 8.7) — Fix: starlette>=0.40.0 (FastAPI>=0.111.0 includes this fix)
+# FastAPI uses starlette as its ASGI foundation; any endpoint accepting multipart/form-data is exposed.
+# An attacker can send a crafted multipart request with no Content-Length boundary, exhausting server memory.
+starlette==0.36.3
+
+# fastapi 0.109.2 depends on starlette — version constrained above for the demo
+fastapi==0.109.2
+
+# VULN-SEED (CVE): langflow 1.1.4 — CVE-2025-3248 (unauthenticated RCE via /api/v1/run, CVSS 9.8, CISA KEV) — Fix: langflow>=1.3.0
+# An unauthenticated attacker can submit a crafted flow definition to execute arbitrary Python on the server.
+# CISA KEV status: exploited in the wild. JAS exploit maturity: Proof-of-Concept available.
+langflow==1.1.4
+
+# VULN-SEED (CVE): urllib3 2.2.1 — CVE-2025-66418 (chained decompression DoS, CVSS 8.9) — Fix: urllib3>=2.6.0
+urllib3==2.2.1
+
+# ── Standard deps (not vulnerable) ───────────────────────────────────────────
+uvicorn[standard]==0.27.0
+pydantic==2.5.0
+httpx==0.27.0
+python-dotenv==1.0.0
+requests==2.31.0

@@ -1,0 +1,30 @@
+# Environment — never commit real credentials
+.env
+*.env.local
+
+# JFrog CLI server config (contains tokens)
+~/.jfrog/
+
+# Build outputs
+target/
+dist/
+build/
+__pycache__/
+*.pyc
+node_modules/
+.gradle/
+*.class
+bin/
+obj/
+
+# IDE
+.vscode/settings.json.local
+.idea/workspace.xml
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Demo reset state
+.demo-state/

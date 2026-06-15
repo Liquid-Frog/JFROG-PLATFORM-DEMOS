@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>SwiftShip.Payments</AssemblyName>
+    <RootNamespace>SwiftShip.Payments</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- VULN-SEED (CVE): Newtonsoft.Json 12.0.3 — CVE-2024-21907 (deep JSON nesting DoS/StackOverflow, CVSS 7.5) — Fix: upgrade to 13.0.1+ (use for AppTrust Waiver demo: "can't migrate this sprint") -->
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+
+    <!-- VULN-SEED (CVE): System.Text.Json 8.0.3 — CVE-2024-43485 (JsonExtensionData algorithmic DoS, CVSS 7.5) — Fix: upgrade to 8.0.5+ -->
+    <PackageReference Include="System.Text.Json" Version="8.0.3" />
+
+    <!-- VULN-SEED (License): iTextSharp 5.5.13.3 — AGPL-3.0 license violation in a PCI-DSS-scoped commercial payments component — Fix: migrate to iText 7 with a commercial license, or substitute a permissively-licensed PDF library -->
+    <PackageReference Include="iTextSharp" Version="5.5.13.3" />
+
+    <!-- Standard ASP.NET deps -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+  </ItemGroup>
+
+</Project>

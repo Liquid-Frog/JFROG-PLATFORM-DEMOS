@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.swiftship</groupId>
+  <artifactId>auth-service-demo</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <name>SwiftShip Auth Service — Maven Demo</name>
+  <description>
+    Intentionally vulnerable Spring Boot app for the JFrog Xray / AppTrust demo.
+    Demonstrates CVE-2025-41234 (Spring RCE, CVSS 9.8) and CVE-2025-41248
+    (Spring Security bypass, CVSS 9.1). See demo.sh for the live demo flow.
+  </description>
+
+  <properties>
+    <java.version>17</java.version>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+    <!-- VULN-SEED (CVE): spring-framework 6.1.6 — CVE-2025-41234 (path traversal → RCE, CVSS 9.8) affects 6.0.0–6.1.13 — Fix: upgrade to 6.1.14+ or 6.0.23+ -->
+    <spring-framework.version>6.1.6</spring-framework.version>
+
+    <!-- VULN-SEED (CVE): spring-security 6.2.2 — CVE-2025-41248 (authorization bypass via malformed request patterns, CVSS 9.1) affects 6.0.0–6.2.3 — Fix: upgrade to 6.2.4+ or 6.3.4+ -->
+    <spring-security.version>6.2.2</spring-security.version>
+
+    <spring-boot.version>3.2.3</spring-boot.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- Import Spring Boot BOM first, then override the framework versions below -->
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <!-- Override spring-core to the vulnerable 6.1.6 (CVE-2025-41234) -->
+      <dependency>
+        <groupId>org.springframework</groupId>
+        <artifactId>spring-core</artifactId>
+        <version>${spring-framework.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework</groupId>
+        <artifactId>spring-webmvc</artifactId>
+        <version>${spring-framework.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework</groupId>
+        <artifactId>spring-context</artifactId>
+        <version>${spring-framework.version}</version>
+      </dependency>
+
+      <!-- Override spring-security to the vulnerable 6.2.2 (CVE-2025-41248) -->
+      <dependency>
+        <groupId>org.springframework.security</groupId>
+        <artifactId>spring-security-core</artifactId>
+        <version>${spring-security.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.security</groupId>
+        <artifactId>spring-security-web</artifactId>
+        <version>${spring-security.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.security</groupId>
+        <artifactId>spring-security-config</artifactId>
+        <version>${spring-security.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- Spring Boot Web (REST layer) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- Spring Security (brings in the vulnerable 6.2.2 via dependencyManagement override) -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>${spring-boot.version}</version>
+        <executions>
+          <execution>
+            <goals><goal>repackage</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

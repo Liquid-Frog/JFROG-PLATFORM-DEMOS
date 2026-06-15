@@ -1,0 +1,70 @@
+# SwiftShip Helm chart — values.yaml
+# VULN-SEED (JAS-IaC): multiple IaC misconfigs seeded for JAS IaC scan demo — Fix: see individual VULN-SEED comments below for per-field remediation
+
+global:
+  imageRegistry: "${JFROG_URL}/artifactory/docker-dev-local"
+  imagePullSecrets:
+    - name: jfrog-registry-secret
+
+# ── payments-service (strictest security requirements) ─────────────
+paymentsService:
+  image:
+    repository: swiftship/payments-service
+    tag: "1.0.0"
+  replicas: 2
+  service:
+    port: 8083
+  # VULN-SEED (JAS-IaC): runAsNonRoot: false — container runs as root — Fix: set runAsNonRoot: true and runAsUser: 1000
+  # VULN-SEED (JAS-IaC): allowPrivilegeEscalation: true — allows sudo/setuid escalation inside container — Fix: set allowPrivilegeEscalation: false
+  securityContext:
+    runAsNonRoot: false
+    allowPrivilegeEscalation: true
+    readOnlyRootFilesystem: false
+  env:
+    # VULN-SEED (JAS-Secret): hardcoded DB password in Helm values — Fix: use a Kubernetes Secret or external secrets operator (External Secrets Operator / Vault)
+    - name: DB_PASSWORD
+      value: "prod-db-pass-2024!"
+    - name: PAYMENT_GATEWAY_URL
+      value: "https://api.stripe.com/v1"
+
+# ── auth-service ────────────────────────────────────────────────────
+authService:
+  image:
+    repository: swiftship/auth-service
+    tag: "1.0.0"
+  replicas: 2
+  service:
+    port: 8081
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+
+# ── logistics-service ───────────────────────────────────────────────
+logisticsService:
+  image:
+    repository: swiftship/logistics-service
+    tag: "1.0.0"
+  replicas: 1
+  service:
+    port: 8084
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+
+# ── storefront-ui ───────────────────────────────────────────────────
+storefrontUi:
+  image:
+    repository: swiftship/storefront-ui
+    tag: "1.0.0"
+  replicas: 2
+  service:
+    type: LoadBalancer
+    port: 80
+    targetPort: 3000
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false

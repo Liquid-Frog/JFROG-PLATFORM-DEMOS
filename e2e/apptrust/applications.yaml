@@ -1,0 +1,221 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# AppTrust Applications — SwiftShip Platform
+# Config-as-code manifest applied by setup/bootstrap.sh --apptrust
+#
+# Each entry is the spec input to:
+#   jf apptrust app-create <app_key> --project $JFROG_PROJECT_KEY --spec <file>
+#
+# Real AppTrust spec fields used here:
+#   application_name, description, criticality, maturity_level,
+#   labels, group_owners, user_owners
+#
+# Demo-specific metadata is carried in 'labels' (queryable in the AppTrust UI):
+#   policy_profile — which Rego lifecycle policy to attach (strict/standard/etc.)
+#   package_type   — primary build ecosystem (informational; packages are bound
+#                    at version-create time, not application-create time)
+#   language       — primary implementation language
+#   team           — owning engineering team
+# ══════════════════════════════════════════════════════════════════════════════
+
+version: "1"
+
+applications:
+
+  # ── auth-service ───────────────────────────────────────────────────────────
+  # Strict policy: blocks CVSS >= 7. Any High or Critical finding must be
+  # remediated or waived before this service can be promoted past Stage.
+  # Demo CVEs: CVE-2025-41234 (Spring RCE, 9.8), CVE-2025-41248 (bypass, 9.1)
+  - app_key: swiftship-auth-service
+    application_name: "SwiftShip Auth Service"
+    description: >
+      JWT authentication and authorization gateway for all SwiftShip microservices.
+      Spring Boot / Maven. Runs under the strictest security policy because a
+      compromised auth service exposes the entire platform.
+    criticality: critical
+    maturity_level: production
+    labels:
+      package_type: maven
+      policy_profile: strict
+      language: java
+      team: platform-security
+      demo_cves: "CVE-2025-41234,CVE-2025-41248"
+    group_owners:
+      - swiftship-platform
+      - security-team
+    user_owners: []
+
+  # ── storefront-ui ──────────────────────────────────────────────────────────
+  # Standard policy: blocks CVSS >= 9 on prod, warns on CVSS >= 7.
+  # Demo CVEs: CVE-2024-21538 (cross-spawn ReDoS), CVE-2025-10894 (supply chain)
+  - app_key: swiftship-storefront-ui
+    application_name: "SwiftShip Storefront UI"
+    description: >
+      Customer-facing React/Express storefront served by Node.js.
+      Demonstrates npm supply-chain risk: CVE-2025-10894 (Shai-Hulud) shows
+      how a malicious transitive dependency can be caught by Curation before
+      it reaches the developer's node_modules.
+    criticality: high
+    maturity_level: production
+    labels:
+      package_type: npm
+      policy_profile: standard
+      language: nodejs
+      team: frontend-team
+      demo_cves: "CVE-2024-21538,CVE-2025-10894"
+    group_owners:
+      - swiftship-frontend
+    user_owners: []
+
+  # ── booking-service ────────────────────────────────────────────────────────
+  # Standard policy. Demo CVEs: CVE-2024-47874 (FastAPI/Starlette DoS),
+  # CVE-2025-3248 (Langflow RCE, CISA KEV). The Langflow finding is the
+  # centrepiece of the CISA KEV demo — show it being surfaced by Xray first,
+  # then blocked at Stage by the standard lifecycle policy.
+  - app_key: swiftship-booking-service
+    application_name: "SwiftShip Booking Service"
+    description: >
+      FastAPI service that creates and tracks shipping bookings.
+      Contains a CISA KEV finding (CVE-2025-3248 in Langflow 1.1.4) which
+      Xray flags as exploited-in-the-wild — ideal for showing operational
+      risk prioritisation during the standard policy demo.
+    criticality: high
+    maturity_level: production
+    labels:
+      package_type: pypi
+      policy_profile: standard
+      language: python
+      team: booking-team
+      demo_cves: "CVE-2024-47874,CVE-2025-3248"
+      demo_note: "CVE-2025-3248 is CISA KEV — highlight in Xray violations view"
+    group_owners:
+      - swiftship-backend
+    user_owners: []
+
+  # ── payments-service ───────────────────────────────────────────────────────
+  # Strictest policy: blocks any Critical finding OR any GPL/AGPL license.
+  # This is the primary demo for the AppTrust Waiver workflow:
+  #   1. Show payments-service blocked at Stage (CVE-2024-21907 + AGPL iTextSharp)
+  #   2. Engineer submits a waiver for CVE-2024-21907 ("can't migrate this sprint")
+  #   3. Show the waiver approved, service promoted past Stage with an audit trail
+  #   4. AGPL violation remains blocked — can't be waived, must be fixed
+  - app_key: swiftship-payments-service
+    application_name: "SwiftShip Payments Service"
+    description: >
+      ASP.NET Core service handling payment authorisation. Subject to PCI-DSS
+      scope — carries the strictest lifecycle policy in the platform.
+      Deliberately contains CVE-2024-21907 (Newtonsoft.Json DoS) and an
+      iTextSharp AGPL-3.0 license violation to demonstrate the full waiver
+      and license-compliance enforcement workflow.
+    criticality: critical
+    maturity_level: production
+    labels:
+      package_type: nuget
+      policy_profile: strict
+      policy_variant: payments-strict
+      language: dotnet
+      team: payments-team
+      compliance_scope: PCI-DSS
+      demo_cves: "CVE-2024-21907,CVE-2024-43485"
+      demo_license_violation: "AGPL-3.0 (iTextSharp 5.5.13.3)"
+      demo_note: "Use for AppTrust Waiver + License Policy demo"
+    group_owners:
+      - swiftship-payments
+      - security-team
+    user_owners: []
+
+  # ── logistics-service ──────────────────────────────────────────────────────
+  # Standard policy. Go stdlib CVEs (net/http smuggling, x/crypto DoS).
+  # Good for showing that even standard library updates create Xray findings.
+  - app_key: swiftship-logistics-service
+    application_name: "SwiftShip Logistics Service"
+    description: >
+      Go service tracking shipment routing and ETA calculations.
+      Uses an intentionally old Go toolchain (1.23.0) to trigger
+      stdlib CVEs — demonstrates that Xray scans the Go module graph
+      including transitive golang.org/x packages.
+    criticality: high
+    maturity_level: production
+    labels:
+      package_type: go
+      policy_profile: standard
+      language: go
+      team: logistics-team
+      demo_cves: "CVE-2025-22869,CVE-2025-22871"
+    group_owners:
+      - swiftship-logistics
+    user_owners: []
+
+  # ── recommendation-engine ─────────────────────────────────────────────────
+  # ML-specific policy: allows experimental models, warns on model provenance,
+  # blocks unapproved HuggingFace organisations via Curation.
+  - app_key: swiftship-recommendation-engine
+    application_name: "SwiftShip Recommendation Engine"
+    description: >
+      Python FastAPI service using a HuggingFace model (via Langflow) to serve
+      personalised product recommendations. Demonstrates the full AI/ML security
+      surface: (1) Langflow CVE-2025-3248 in requirements, (2) HuggingFace model
+      from an unapproved org blocked by Curation, (3) ML-specific lifecycle policy
+      that requires model-card evidence before Stage promotion.
+    criticality: medium
+    maturity_level: experimental
+    labels:
+      package_type: pypi
+      model_registry: huggingface
+      policy_profile: ml-specific
+      language: python
+      team: ai-team
+      demo_cves: "CVE-2025-3248"
+      demo_curation: "unapproved HuggingFace org blocked at download"
+    group_owners:
+      - swiftship-ai
+    user_owners: []
+
+  # ── ai-assistant ───────────────────────────────────────────────────────────
+  # AI-specific policy: requires approved plugin registry, SBOM evidence,
+  # and blocks unapproved MCP agent plugins.
+  - app_key: swiftship-ai-assistant
+    application_name: "SwiftShip AI Assistant"
+    description: >
+      Python FastAPI customer-support agent using the JFrog MCP Server.
+      Demonstrates: (1) JAS Secrets detection of a hardcoded OpenAI API key,
+      (2) Agent Plugins repo blocking an unapproved Cursor plugin registry,
+      (3) AI-specific lifecycle policy requiring evidence of plugin provenance
+      before deployment. Use this service for the MCP/Agentic demo track.
+    criticality: medium
+    maturity_level: experimental
+    labels:
+      package_type: pypi
+      agent_type: mcp
+      policy_profile: ai-specific
+      language: python
+      team: ai-team
+      demo_jas: "hardcoded sk-proj- OpenAI key"
+      demo_agent_plugins: "unapproved Cursor plugin registry in config.py"
+    group_owners:
+      - swiftship-ai
+    user_owners: []
+
+  # ── infra ──────────────────────────────────────────────────────────────────
+  # IaC-specific policy: blocks promotion of Helm charts with root-running
+  # containers, privilege escalation enabled, or hardcoded secrets.
+  # Demonstrates JAS IaC scanning on the Helm chart.
+  - app_key: swiftship-infra
+    application_name: "SwiftShip Infrastructure"
+    description: >
+      Helm charts and OCI artefacts for the entire SwiftShip platform.
+      Intentionally contains three JAS IaC findings in the payments-service
+      Deployment: runAsNonRoot=false, allowPrivilegeEscalation=true, and a
+      hardcoded DB_PASSWORD in values.yaml. Use this for the JAS IaC scan
+      and Helm promotion demo — show findings, then show the fix diff.
+    criticality: high
+    maturity_level: production
+    labels:
+      package_type: helm
+      secondary_package_type: oci
+      policy_profile: iac-specific
+      team: infrastructure-team
+      demo_jas: "IaC: root container, privilege escalation, hardcoded DB_PASSWORD"
+    group_owners:
+      - swiftship-infrastructure
+      - security-team
+    user_owners: []

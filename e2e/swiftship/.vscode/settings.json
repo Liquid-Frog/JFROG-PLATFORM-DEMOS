@@ -1,0 +1,8 @@
+{
+  "jfrog.url": "${env:JFROG_URL}",
+  "jfrog.xray.username": "${env:JFROG_USER}",
+  "jfrog.xray.password": "${env:JFROG_TOKEN}",
+  "jfrog.xray.scanOnSave": true,
+  "jfrog.xray.excludePattern": "**/node_modules/**,**/target/**,**/.git/**",
+  "editor.formatOnSave": true
+}

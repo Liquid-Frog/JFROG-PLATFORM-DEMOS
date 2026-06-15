@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "jfrog": {
+      "type": "sse",
+      "url": "${JFROG_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${JFROG_TOKEN}"
+      }
+    }
+  }
+}

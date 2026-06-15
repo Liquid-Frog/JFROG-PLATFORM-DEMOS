@@ -1,0 +1,174 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# ci-matrix.yml — Path-scoped Xray audit matrix
+#
+# Runs jf audit for each package ecosystem (Maven, npm, PyPI, Docker, Go,
+# NuGet, Helm) but ONLY for the ecosystems whose source directories changed
+# in the triggering push or PR. Untouched ecosystems are skipped, keeping
+# CI fast even as the monorepo grows.
+#
+# Auth priority:
+#   1. JFrog OIDC (zero-secret) — enabled when the repo variable
+#      JFROG_OIDC_PROVIDER_NAME is set (preferred for production instances).
+#   2. JFROG_TOKEN secret — automatic fallback when OIDC is not configured.
+#
+# Secrets / variables required:
+#   Secrets : JFROG_URL, JFROG_TOKEN
+#   Variables: JFROG_OIDC_PROVIDER_NAME (optional), JFROG_REPO_PREFIX (optional)
+#
+# Scan results are uploaded as GitHub artifacts (retention: 14 days) so that
+# SolEng engineers can review the raw JSON between demo sessions.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: CI — Package Audit Matrix
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'demo/**'
+  pull_request:
+    branches:
+      - main
+
+# Cancel any in-flight run on the same branch when a newer commit arrives.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write      # required for JFrog OIDC token exchange
+  pull-requests: read  # required for dorny/paths-filter to diff PRs
+
+jobs:
+  # ── Stage 1: detect which ecosystems changed ──────────────────────────────
+  changes:
+    name: Detect changed packages
+    runs-on: ubuntu-latest
+    outputs:
+      matrix:      ${{ steps.build-matrix.outputs.matrix }}
+      has_changes: ${{ steps.build-matrix.outputs.has_changes }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history needed for accurate diff on push events
+
+      - name: Detect path changes per ecosystem
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            maven:
+              - 'traditional/maven/**'
+              - 'e2e/swiftship/auth-service/**'
+            npm:
+              - 'traditional/npm/**'
+              - 'e2e/swiftship/storefront-ui/**'
+            pypi:
+              - 'traditional/pypi/**'
+              - 'e2e/swiftship/booking-service/**'
+              - 'e2e/swiftship/recommendation-engine/**'
+            docker:
+              - 'traditional/docker/**'
+              - '**/Dockerfile'
+            go:
+              - 'traditional/go/**'
+              - 'e2e/swiftship/logistics-service/**'
+            nuget:
+              - 'traditional/nuget/**'
+              - 'e2e/swiftship/payments-service/**'
+            helm:
+              - 'traditional/helm/**'
+              - 'e2e/swiftship/infra/**'
+
+      - name: Build audit matrix from changed paths
+        id: build-matrix
+        env:
+          F_MAVEN:  ${{ steps.filter.outputs.maven }}
+          F_NPM:    ${{ steps.filter.outputs.npm }}
+          F_PYPI:   ${{ steps.filter.outputs.pypi }}
+          F_DOCKER: ${{ steps.filter.outputs.docker }}
+          F_GO:     ${{ steps.filter.outputs.go }}
+          F_NUGET:  ${{ steps.filter.outputs.nuget }}
+          F_HELM:   ${{ steps.filter.outputs.helm }}
+        run: |
+          includes=()
+
+          [[ "$F_MAVEN"  == "true" ]] && includes+=(
+            '{"package":"maven",  "scan_dir":"e2e/swiftship/auth-service",      "audit_flags":"--mvn"}'
+          )
+          [[ "$F_NPM"    == "true" ]] && includes+=(
+            '{"package":"npm",    "scan_dir":"e2e/swiftship/storefront-ui",     "audit_flags":"--npm"}'
+          )
+          [[ "$F_PYPI"   == "true" ]] && includes+=(
+            '{"package":"pypi",   "scan_dir":"e2e/swiftship/booking-service",   "audit_flags":"--pip"}'
+          )
+          [[ "$F_DOCKER" == "true" ]] && includes+=(
+            '{"package":"docker", "scan_dir":"traditional/docker",              "audit_flags":"--iac --secrets"}'
+          )
+          [[ "$F_GO"     == "true" ]] && includes+=(
+            '{"package":"go",     "scan_dir":"e2e/swiftship/logistics-service", "audit_flags":"--go"}'
+          )
+          [[ "$F_NUGET"  == "true" ]] && includes+=(
+            '{"package":"nuget",  "scan_dir":"e2e/swiftship/payments-service",  "audit_flags":"--nuget"}'
+          )
+          [[ "$F_HELM"   == "true" ]] && includes+=(
+            '{"package":"helm",   "scan_dir":"e2e/swiftship/infra",             "audit_flags":"--iac --secrets"}'
+          )
+
+          if [[ ${#includes[@]} -eq 0 ]]; then
+            echo 'matrix={"include":[]}'  >> "$GITHUB_OUTPUT"
+            echo 'has_changes=false'      >> "$GITHUB_OUTPUT"
+          else
+            joined=$(IFS=,; echo "${includes[*]}")
+            echo "matrix={\"include\":[$joined]}" >> "$GITHUB_OUTPUT"
+            echo 'has_changes=true'               >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Stage 2: run jf audit for each changed ecosystem ─────────────────────
+  audit:
+    name: Audit — ${{ matrix.package }}
+    needs: changes
+    # Skip entire job (and avoid a fromJSON error) when nothing changed.
+    if: needs.changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # let all ecosystems finish even if one has violations
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JFrog CLI
+        uses: jfrog/setup-jfrog-cli@v4
+        with:
+          jfrog-url: ${{ secrets.JFROG_URL }}
+          # OIDC is used when JFROG_OIDC_PROVIDER_NAME is a configured repo variable.
+          # The action falls back to JF_ACCESS_TOKEN automatically when the variable
+          # is absent or empty — no code change needed to switch auth methods.
+          oidc-provider-name: ${{ vars.JFROG_OIDC_PROVIDER_NAME }}
+        env:
+          JF_ACCESS_TOKEN: ${{ secrets.JFROG_TOKEN }}
+
+      - name: Run Xray audit — ${{ matrix.package }}
+        id: xray-audit
+        working-directory: ${{ matrix.scan_dir }}
+        # continue-on-error keeps the job green when vulnerabilities are found
+        # (expected in this demo repo — CVEs are intentionally seeded).
+        # Remove this flag if you want CI to block on new violations.
+        continue-on-error: true
+        run: |
+          jf audit ${{ matrix.audit_flags }} \
+            --format=json \
+            > "$GITHUB_WORKSPACE/xray-results-${{ matrix.package }}.json"
+
+      - name: Upload Xray results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xray-results-${{ matrix.package }}
+          path: xray-results-${{ matrix.package }}.json
+          retention-days: 14
+          if-no-files-found: warn

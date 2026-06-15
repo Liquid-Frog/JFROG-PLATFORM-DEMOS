@@ -1,0 +1,13 @@
+# SwiftShip AI Assistant — customer support agent
+# Demonstrates: JFrog MCP Server, Agent Plugins repo governance, JAS Secrets detection
+
+# VULN-SEED (JAS-Secret): app/config.py contains a hardcoded OpenAI API key (sk-proj- prefix) — JAS detects this pattern inline in the IDE — Fix: inject from environment variable OPENAI_API_KEY
+
+fastapi==0.109.2
+uvicorn[standard]==0.27.0
+pydantic==2.5.0
+httpx==0.27.0
+python-dotenv==1.0.0
+
+# MCP client SDK
+mcp==1.0.0
