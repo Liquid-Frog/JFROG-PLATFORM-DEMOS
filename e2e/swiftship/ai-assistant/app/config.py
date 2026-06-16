@@ -1,7 +1,7 @@
 import os
 
 # VULN-SEED (JAS-Secret): hardcoded OpenAI API key — JAS detects the sk-proj- prefix pattern — Fix: inject from environment variable OPENAI_API_KEY; never hardcode in source
-OPENAI_API_KEY = "sk-proj-abc123ThisIsAFakeKeyForDemoOnlyDoNotUse"  # noqa: S105
+OPENAI_API_KEY = "sk-proj-dEmO9xK2mNpQ7vR4wL8jH3cF6yT1sA0bE5nU2iO"  # noqa: S105
 
 # JFrog MCP Server config — reads from environment (correctly done)
 JFROG_MCP_URL = os.environ.get("JFROG_MCP_URL", "")

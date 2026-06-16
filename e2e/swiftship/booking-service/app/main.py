@@ -5,7 +5,7 @@ import os
 app = FastAPI(title="SwiftShip Booking Service", version="1.0.0")
 
 # VULN-SEED (JAS-Secret): hardcoded Stripe test key — JAS detects the sk_test_ prefix pattern — Fix: inject from environment variable STRIPE_TEST_KEY
-STRIPE_TEST_KEY = "sk_test_4eC39HqLyjWDarjtT1zdp7dc"  # noqa: S105
+STRIPE_TEST_KEY = "sk_test_51NxSOMDoBcX3y4Z8qR2mK7pL9wE6vT1nA0hF5jU8rC"  # noqa: S105
 
 
 class Booking(BaseModel):

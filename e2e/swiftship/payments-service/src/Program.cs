@@ -12,7 +12,7 @@ app.MapPost("/payments", (PaymentRequest req) =>
 {
     // VULN-SEED (JAS Secrets): hardcoded payment gateway API key
     // Fix: inject from environment variable or Azure Key Vault
-    var gatewayKey = "pk_live_51NxSOMDo-not-use-this-in-production";
+    var gatewayKey = "sk_live_51NxSOMDoBcX3y4Z8qR2mK7pL9wE6vT1nA0hF5jU";
     return new
     {
         payment_id = $"PAY-{Guid.NewGuid():N}"[..12],

@@ -23,7 +23,7 @@ paymentsService:
   env:
     # VULN-SEED (JAS-Secret): hardcoded DB password in Helm values — Fix: use a Kubernetes Secret or external secrets operator (External Secrets Operator / Vault)
     - name: DB_PASSWORD
-      value: "prod-db-pass-2024!"
+      value: "Sw!ftSh1p#Pr0d@2024$xK9mN"
     - name: PAYMENT_GATEWAY_URL
       value: "https://api.stripe.com/v1"
 
