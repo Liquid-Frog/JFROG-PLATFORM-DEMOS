@@ -74,6 +74,17 @@ jfrog-platform-demos/
 - GitHub account with Frogbot permissions
 - For MCP mode: JFrog MCP Server enabled ([docs](https://docs.jfrog.com/integrations/docs/enable-the-jfrog-mcp-server))
 
+## Before you start
+
+Run `jf c show` to see your configured JFrog CLI servers.
+Set `JF_SERVER_ID` in `.env` to the server pointing to your demo instance.
+
+If you have not configured a server yet:
+
+```bash
+jf c add --url=https://YOUR-INSTANCE.jfrog.io --interactive
+```
+
 ## Shared instance setup
 
 If multiple SolEng engineers share one JFrog instance, set `JFROG_PROJECT_KEY=se-yourname` in `.env`. The bootstrap script will namespace all repos and policies under a JFrog Project so you don't collide.

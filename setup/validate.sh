@@ -28,6 +28,23 @@ else
   echo; echo "Cannot continue without .env"; exit 1
 fi
 
+# JF_SERVER_ID must be set and point to a real jf config entry
+if [[ -z "${JF_SERVER_ID:-}" ]]; then
+  echo
+  echo "  ❌  JF_SERVER_ID not set in .env"
+  echo "     Run 'jf c show' to list your configured server IDs"
+  echo "     Then set JF_SERVER_ID=<your-server-id> in .env"
+  exit 1
+fi
+JFSHOW=$(jf c show "$JF_SERVER_ID" 2>/dev/null || true)
+if [[ -z "$JFSHOW" ]]; then
+  echo
+  echo "  ❌  Server ID '$JF_SERVER_ID' not found in jf config."
+  echo "     Run 'jf c show' to see available server IDs."
+  exit 1
+fi
+green "JF_SERVER_ID=$JF_SERVER_ID (server found in jf config)"
+
 # Required vars
 for var in JFROG_URL JFROG_TOKEN JFROG_USER; do
   if [[ -n "${!var:-}" ]]; then
@@ -91,21 +108,23 @@ else
 fi
 
 # ── Demo repos exist ─────────────────────────────────────────────
-section "Demo Artifactory repos"
-PREFIX="${JFROG_PROJECT_KEY:+${JFROG_PROJECT_KEY}-}${JFROG_REPO_PREFIX:-demo}"
+section "Demo Artifactory repos (team-tech-maturity-locator)"
+TEAM="${JFROG_PROJECT_KEY:-swiftship}"
 MISSING_REPOS=0
 for pkg in maven npm pypi docker go nuget helm; do
   for env in dev stage prod; do
-    REPO="${PREFIX}-${pkg}-${env}"
-    STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-      -H "Authorization: Bearer $JFROG_TOKEN" \
-      "$JFROG_URL/artifactory/api/repositories/$REPO" 2>/dev/null || echo "000")
-    if [[ "$STATUS" == "200" ]]; then
-      green "Repo $REPO exists"
-    else
-      warn "Repo $REPO not found (HTTP $STATUS)"
-      ((MISSING_REPOS++))
-    fi
+    for locator in local remote virtual; do
+      REPO="${TEAM}-${pkg}-${env}-${locator}"
+      STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+        -H "Authorization: Bearer $JFROG_TOKEN" \
+        "$JFROG_URL/artifactory/api/repositories/$REPO" 2>/dev/null || echo "000")
+      if [[ "$STATUS" == "200" ]]; then
+        green "Repo $REPO exists"
+      else
+        warn "Repo $REPO not found (HTTP $STATUS)"
+        ((MISSING_REPOS++))
+      fi
+    done
   done
 done
 if [[ $MISSING_REPOS -gt 0 ]]; then
@@ -147,12 +166,12 @@ fi
 
 # ── Vulnerable packages seeded ───────────────────────────────────
 section "Demo data (vulnerable packages seeded)"
-# Quick check: does the dev npm repo contain the seeded nx package?
+# Quick check: does the dev npm virtual repo contain the seeded nx package?
 NX_CHECK=$(curl -s \
   -H "Authorization: Bearer $JFROG_TOKEN" \
-  "$JFROG_URL/artifactory/api/search/artifact?name=nx&repos=${PREFIX}-npm-dev" 2>/dev/null || echo "{}")
+  "$JFROG_URL/artifactory/api/search/artifact?name=nx&repos=${TEAM}-npm-dev-virtual" 2>/dev/null || echo "{}")
 if echo "$NX_CHECK" | grep -q '"uri"'; then
-  green "Vulnerable npm packages found in ${PREFIX}-npm-dev"
+  green "Vulnerable npm packages found in ${TEAM}-npm-dev-virtual"
 else
   warn "Demo packages may not be seeded — run: ./setup/prep.sh"
 fi

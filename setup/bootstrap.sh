@@ -87,12 +87,12 @@ fi
 
 # ── Configure JFrog CLI ──────────────────────────────────────────
 step "Configuring JFrog CLI"
-jf config add swiftship \
+jf config add "$JF_SERVER_ID" \
   --url="$JFROG_URL" \
   --access-token="$JFROG_TOKEN" \
   --interactive=false \
   --overwrite 2>/dev/null || true
-ok "JFrog CLI server configured (id: swiftship)"
+ok "JFrog CLI server configured (id: $JF_SERVER_ID)"
 
 # ── Create Artifactory repos ─────────────────────────────────────
 if [[ "$MODE" == "all" || "$MODE" == "--packages" ]]; then

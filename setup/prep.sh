@@ -36,12 +36,12 @@ echo "  Dry run:   $DRY_RUN"
 
 # Configure JFrog CLI server
 step "Configuring JFrog CLI"
-run jf config add swiftship \
+run jf config add "$JF_SERVER_ID" \
   --url="$JFROG_URL" \
   --access-token="$JFROG_TOKEN" \
   --interactive=false \
   --overwrite 2>/dev/null || true
-ok "JFrog CLI configured (server: swiftship)"
+ok "JFrog CLI configured (server: $JF_SERVER_ID)"
 
 # ── Maven / auth-service ─────────────────────────────────────────
 if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "auth" ]]; then
@@ -51,15 +51,15 @@ if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "auth" ]]; then
     --repo-resolve-snapshots="${TEAM}-maven-dev-virtual" \
     --repo-deploy-releases="${TEAM}-maven-dev-local" \
     --repo-deploy-snapshots="${TEAM}-maven-dev-local" \
-    --server-id-resolve=swiftship \
-    --server-id-deploy=swiftship \
+    --server-id-resolve=$JF_SERVER_ID \
+    --server-id-deploy=$JF_SERVER_ID \
     --user=$JFROG_USER 2>/dev/null || true
 
   cd "$ROOT_DIR/e2e/swiftship/auth-service"
   run jf mvn package -DskipTests --quiet 2>/dev/null || \
     echo "   (Maven build skipped — requires JDK 17. jf audit will still scan.)"
   # Trigger Xray scan directly via CLI audit
-  run jf audit --mvn --server-id=swiftship || true
+  run jf audit --mvn --server-id=$JF_SERVER_ID || true
   ok "auth-service Maven scan triggered"
   cd "$ROOT_DIR"
 fi
@@ -71,10 +71,10 @@ if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "storefront" ]]; then
   run jf npmc \
     --repo-resolve="${TEAM}-npm-dev-virtual" \
     --repo-deploy="${TEAM}-npm-dev-local" \
-    --server-id-resolve=swiftship \
-    --server-id-deploy=swiftship 2>/dev/null || true
+    --server-id-resolve=$JF_SERVER_ID \
+    --server-id-deploy=$JF_SERVER_ID 2>/dev/null || true
   # Audit without installing (avoids pulling malicious package)
-  run jf audit --npm --server-id=swiftship || true
+  run jf audit --npm --server-id=$JF_SERVER_ID || true
   ok "storefront-ui npm scan triggered"
   cd "$ROOT_DIR"
 fi
@@ -86,9 +86,9 @@ if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "booking" ]]; then
   run jf pipc \
     --repo-resolve="${TEAM}-pypi-dev-virtual" \
     --repo-deploy="${TEAM}-pypi-dev-local" \
-    --server-id-resolve=swiftship \
-    --server-id-deploy=swiftship 2>/dev/null || true
-  run jf audit --pip --server-id=swiftship || true
+    --server-id-resolve=$JF_SERVER_ID \
+    --server-id-deploy=$JF_SERVER_ID 2>/dev/null || true
+  run jf audit --pip --server-id=$JF_SERVER_ID || true
   ok "booking-service PyPI scan triggered"
   cd "$ROOT_DIR"
 fi
@@ -100,9 +100,9 @@ if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "payments" ]]; then
   run jf dotnetc \
     --repo-resolve="${TEAM}-nuget-dev-virtual" \
     --repo-deploy="${TEAM}-nuget-dev-local" \
-    --server-id-resolve=swiftship \
-    --server-id-deploy=swiftship 2>/dev/null || true
-  run jf audit --nuget --server-id=swiftship || true
+    --server-id-resolve=$JF_SERVER_ID \
+    --server-id-deploy=$JF_SERVER_ID 2>/dev/null || true
+  run jf audit --nuget --server-id=$JF_SERVER_ID || true
   ok "payments-service NuGet scan triggered"
   cd "$ROOT_DIR"
 fi
@@ -114,9 +114,9 @@ if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "logistics" ]]; then
   run jf go-config \
     --repo-resolve="${TEAM}-go-dev-virtual" \
     --repo-deploy="${TEAM}-go-dev-local" \
-    --server-id-resolve=swiftship \
-    --server-id-deploy=swiftship 2>/dev/null || true
-  run jf audit --go --server-id=swiftship || true
+    --server-id-resolve=$JF_SERVER_ID \
+    --server-id-deploy=$JF_SERVER_ID 2>/dev/null || true
+  run jf audit --go --server-id=$JF_SERVER_ID || true
   ok "logistics-service Go scan triggered"
   cd "$ROOT_DIR"
 fi
@@ -124,7 +124,7 @@ fi
 # ── Helm / infra ─────────────────────────────────────────────────
 if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "infra" ]]; then
   step "Seeding infra Helm chart (IaC misconfiguration + secrets)"
-  run jf audit --iac --secrets --server-id=swiftship \
+  run jf audit --iac --secrets --server-id=$JF_SERVER_ID \
     --working-dirs="$ROOT_DIR/e2e/swiftship/infra" || true
   ok "infra Helm JAS IaC + secrets scan triggered"
 fi
