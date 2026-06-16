@@ -7,13 +7,14 @@
 # CI fast even as the monorepo grows.
 #
 # Auth priority:
-#   1. JFrog OIDC (zero-secret) — enabled when the repo variable
-#      JFROG_OIDC_PROVIDER_NAME is set (preferred for production instances).
+#   1. JFrog OIDC (zero-secret) — provider name is hardcoded to
+#      Liquid-Frog/JFROG-PLATFORM-DEMOS@github (preferred for production instances).
+#      Fork owners: replace this with your own org/repo@github string.
 #   2. JFROG_TOKEN secret — automatic fallback when OIDC is not configured.
 #
 # Secrets / variables required:
 #   Secrets : JFROG_URL, JFROG_TOKEN
-#   Variables: JFROG_OIDC_PROVIDER_NAME (optional), JFROG_REPO_PREFIX (optional)
+#   Variables: JFROG_REPO_PREFIX (optional)
 #
 # Scan results are uploaded as GitHub artifacts (retention: 14 days) so that
 # SolEng engineers can review the raw JSON between demo sessions.
@@ -143,14 +144,10 @@ jobs:
 
       - name: Set up JFrog CLI
         uses: jfrog/setup-jfrog-cli@v4
-        with:
-          jfrog-url: ${{ secrets.JFROG_URL }}
-          # OIDC is used when JFROG_OIDC_PROVIDER_NAME is a configured repo variable.
-          # The action falls back to JF_ACCESS_TOKEN automatically when the variable
-          # is absent or empty — no code change needed to switch auth methods.
-          oidc-provider-name: ${{ vars.JFROG_OIDC_PROVIDER_NAME }}
         env:
-          JF_ACCESS_TOKEN: ${{ secrets.JFROG_TOKEN }}
+          JF_URL: ${{ vars.JF_URL }}
+        with:
+          oidc-provider-name: Liquid-Frog/JFROG-PLATFORM-DEMOS@github
 
       - name: Run Xray audit — ${{ matrix.package }}
         id: xray-audit

@@ -64,11 +64,10 @@ jobs:
 
       - name: Set up JFrog CLI
         uses: jfrog/setup-jfrog-cli@v4
-        with:
-          jfrog-url: ${{ secrets.JFROG_URL }}
-          oidc-provider-name: ${{ vars.JFROG_OIDC_PROVIDER_NAME }}
         env:
-          JF_ACCESS_TOKEN: ${{ secrets.JFROG_TOKEN }}
+          JF_URL: ${{ vars.JF_URL }}
+        with:
+          oidc-provider-name: Liquid-Frog/JFROG-PLATFORM-DEMOS@github
 
       # reset.sh has an interactive confirmation prompt — pipe "y" to bypass it.
       # --wipe deletes artifacts and clears Xray cache without calling prep.sh
