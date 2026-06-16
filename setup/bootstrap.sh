@@ -2,8 +2,13 @@
 set -euo pipefail
 # ══════════════════════════════════════════════════════════════════
 # bootstrap.sh — one-time setup of a JFrog instance for demos
-# Creates all repos, Xray watches, policies, and Curation rules.
-# Idempotent — safe to re-run.
+# Creates JFrog project, all repos, Xray watches, policies, and
+# Curation rules.  Idempotent — safe to re-run.
+#
+# Repo naming: <team>-<tech>-<maturity>-<locator>
+#   local   → swiftship-npm-dev-local
+#   remote  → swiftship-npm-dev-remote  (proxies public registry)
+#   virtual → swiftship-npm-dev-virtual (aggregates local + remote)
 #
 # Usage:
 #   ./setup/bootstrap.sh               # full setup
@@ -15,7 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$ROOT_DIR/.env" 2>/dev/null || { echo "❌ .env not found"; exit 1; }
 
-PREFIX="${JFROG_PROJECT_KEY:+${JFROG_PROJECT_KEY}-}${JFROG_REPO_PREFIX:-demo}"
+PROJECT_KEY="${JFROG_PROJECT_KEY:-swiftship}"
+TEAM="$PROJECT_KEY"
 MODE="${1:-all}"
 
 step()   { echo; echo "━━━ $1"; }
@@ -42,8 +48,27 @@ echo "╔═══════════════════════�
 echo "║  SwiftShip — Bootstrap JFrog instance        ║"
 echo "╚══════════════════════════════════════════════╝"
 echo "  Instance : $JFROG_URL"
-echo "  Prefix   : $PREFIX"
+echo "  Team     : $TEAM"
 echo "  Mode     : $MODE"
+
+# ── Create JFrog Project ─────────────────────────────────────────
+step "Creating JFrog project: $PROJECT_KEY"
+PROJ_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer $JFROG_TOKEN" \
+  -H "Content-Type: application/json" \
+  -X POST "$JFROG_URL/access/api/v1/projects" \
+  -d "{
+    \"project_key\": \"$PROJECT_KEY\",
+    \"project_name\": \"SwiftShip Demo\",
+    \"description\": \"JFrog Platform Demo — SwiftShip polyglot app\"
+  }" 2>/dev/null)
+if [[ "$PROJ_STATUS" == "200" || "$PROJ_STATUS" == "201" ]]; then
+  ok "JFrog project created: $PROJECT_KEY"
+elif [[ "$PROJ_STATUS" == "409" ]]; then
+  skip "JFrog project $PROJECT_KEY"
+else
+  echo "  ⚠️  Project creation returned HTTP $PROJ_STATUS (may need Platform Admin privileges)"
+fi
 
 # ── Configure JFrog CLI ──────────────────────────────────────────
 step "Configuring JFrog CLI"
@@ -56,57 +81,64 @@ ok "JFrog CLI server configured (id: swiftship)"
 
 # ── Create Artifactory repos ─────────────────────────────────────
 if [[ "$MODE" == "all" || "$MODE" == "--packages" ]]; then
-  step "Creating Artifactory repositories"
+  step "Creating Artifactory repositories (team-tech-maturity-locator)"
 
-  # Traditional package types
+  # Traditional package types with public registry remote URLs
   for PKG in maven npm pypi docker go nuget helm gradle; do
+    case $PKG in
+      maven)   RTYPE="maven"  REMOTE_URL="https://repo1.maven.org/maven2" ;;
+      npm)     RTYPE="npm"    REMOTE_URL="https://registry.npmjs.org" ;;
+      pypi)    RTYPE="pypi"   REMOTE_URL="https://pypi.org" ;;
+      docker)  RTYPE="docker" REMOTE_URL="https://registry-1.docker.io" ;;
+      go)      RTYPE="go"     REMOTE_URL="https://proxy.golang.org" ;;
+      nuget)   RTYPE="nuget"  REMOTE_URL="https://api.nuget.org/v3/index.json" ;;
+      helm)    RTYPE="helm"   REMOTE_URL="https://charts.helm.sh/stable" ;;
+      gradle)  RTYPE="gradle" REMOTE_URL="https://repo1.maven.org/maven2" ;;
+    esac
+
     for ENV in dev stage prod; do
-      REPO="${PREFIX}-${PKG}-${ENV}"
-      case $PKG in
-        maven)   RTYPE="maven" ;;
-        npm)     RTYPE="npm" ;;
-        pypi)    RTYPE="pypi" ;;
-        docker)  RTYPE="docker" ;;
-        go)      RTYPE="go" ;;
-        nuget)   RTYPE="nuget" ;;
-        helm)    RTYPE="helm" ;;
-        gradle)  RTYPE="gradle" ;;
-      esac
-      create "local" "$REPO" "{\"key\":\"$REPO\",\"rclass\":\"local\",\"packageType\":\"$RTYPE\"}"
+      LOCAL="${TEAM}-${PKG}-${ENV}-local"
+      REMOTE="${TEAM}-${PKG}-${ENV}-remote"
+      VIRTUAL="${TEAM}-${PKG}-${ENV}-virtual"
+
+      create "local"   "$LOCAL"   \
+        "{\"key\":\"$LOCAL\",\"rclass\":\"local\",\"packageType\":\"$RTYPE\"}"
+      create "remote"  "$REMOTE"  \
+        "{\"key\":\"$REMOTE\",\"rclass\":\"remote\",\"packageType\":\"$RTYPE\",\"url\":\"$REMOTE_URL\"}"
+      # Virtual aggregates local first, then falls back to remote proxy cache
+      create "virtual" "$VIRTUAL" \
+        "{\"key\":\"$VIRTUAL\",\"rclass\":\"virtual\",\"packageType\":\"$RTYPE\",\"repositories\":[\"$LOCAL\",\"$REMOTE\"]}"
     done
-    # Virtual repo spanning dev/stage/prod
-    VREPO="${PREFIX}-${PKG}-virtual"
-    create "virtual" "$VREPO" "{\"key\":\"$VREPO\",\"rclass\":\"virtual\",\"packageType\":\"$RTYPE\",\"repositories\":[\"${PREFIX}-${PKG}-dev\",\"${PREFIX}-${PKG}-stage\",\"${PREFIX}-${PKG}-prod\"]}"
   done
 
-  # AI/ML package types
+  # AI/ML package types (no per-environment split)
   for PKG in huggingface ml oci; do
     case $PKG in
       huggingface) RTYPE="huggingfaceml" ;;
       ml)          RTYPE="ml" ;;
       oci)         RTYPE="oci" ;;
     esac
-    REPO="${PREFIX}-${PKG}-local"
+    REPO="${TEAM}-${PKG}-local"
     create "local" "$REPO" "{\"key\":\"$REPO\",\"rclass\":\"local\",\"packageType\":\"$RTYPE\"}"
   done
 
   # Agentic repos
-  create "local" "${PREFIX}-skills-local"       "{\"key\":\"${PREFIX}-skills-local\",\"rclass\":\"local\",\"packageType\":\"skills\"}"
-  create "local" "${PREFIX}-agent-plugins-local" "{\"key\":\"${PREFIX}-agent-plugins-local\",\"rclass\":\"local\",\"packageType\":\"agentplugins\"}"
-  create "local" "${PREFIX}-ai-editor-ext-local" "{\"key\":\"${PREFIX}-ai-editor-ext-local\",\"rclass\":\"local\",\"packageType\":\"aieditorext\"}"
+  create "local" "${TEAM}-skills-local"        "{\"key\":\"${TEAM}-skills-local\",\"rclass\":\"local\",\"packageType\":\"skills\"}"
+  create "local" "${TEAM}-agent-plugins-local" "{\"key\":\"${TEAM}-agent-plugins-local\",\"rclass\":\"local\",\"packageType\":\"agentplugins\"}"
+  create "local" "${TEAM}-ai-editor-ext-local" "{\"key\":\"${TEAM}-ai-editor-ext-local\",\"rclass\":\"local\",\"packageType\":\"aieditorext\"}"
 fi
 
 # ── Xray watches + policies ──────────────────────────────────────
 if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
   step "Creating Xray security policies"
 
-  # Dev policy: warn on CVSS >= 7, block on CVSS >= 9.5
+  # Dev policy: warn on high, block on critical
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
     -X POST "$JFROG_URL/xray/api/v2/policies" \
     -d "{
-      \"name\": \"${PREFIX}-dev-policy\",
+      \"name\": \"${TEAM}-dev-policy\",
       \"type\": \"security\",
       \"rules\": [{
         \"name\": \"dev-cvss-rule\",
@@ -115,13 +147,13 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
       }]
     }" 2>/dev/null && ok "Dev policy created" || skip "Dev policy"
 
-  # Stage policy: block on CVSS >= 7
+  # Stage policy: block on high+
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
     -X POST "$JFROG_URL/xray/api/v2/policies" \
     -d "{
-      \"name\": \"${PREFIX}-stage-policy\",
+      \"name\": \"${TEAM}-stage-policy\",
       \"type\": \"security\",
       \"rules\": [{
         \"name\": \"stage-cvss-rule\",
@@ -130,13 +162,13 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
       }]
     }" 2>/dev/null && ok "Stage policy created" || skip "Stage policy"
 
-  # Prod policy: block on any medium+ AND license violations
+  # Prod policy: block on medium+ AND license violations
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
     -X POST "$JFROG_URL/xray/api/v2/policies" \
     -d "{
-      \"name\": \"${PREFIX}-prod-policy\",
+      \"name\": \"${TEAM}-prod-policy\",
       \"type\": \"security\",
       \"rules\": [{
         \"name\": \"prod-cvss-rule\",
@@ -145,13 +177,13 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
       }]
     }" 2>/dev/null && ok "Prod policy created" || skip "Prod policy"
 
-  # License policy: block AGPL, GPL-2.0 in payments
+  # License policy: block AGPL, GPL in payments
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
     -X POST "$JFROG_URL/xray/api/v2/policies" \
     -d "{
-      \"name\": \"${PREFIX}-license-policy\",
+      \"name\": \"${TEAM}-license-policy\",
       \"type\": \"license\",
       \"rules\": [{
         \"name\": \"commercial-license-rule\",
@@ -161,21 +193,27 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
     }" 2>/dev/null && ok "License policy created" || skip "License policy"
 
   step "Creating Xray watches"
-  # Watch covering all demo repos
-  REPOS_JSON=$(for PKG in maven npm pypi docker go nuget helm gradle; do
-    for ENV in dev stage prod; do echo "\"${PREFIX}-${PKG}-${ENV}\""; done
-  done | paste -sd,)
+  # Delete any existing over-broad watch before recreating with correct scope.
+  curl -s -o /dev/null \
+    -H "Authorization: Bearer $JFROG_TOKEN" \
+    -X DELETE "$JFROG_URL/xray/api/v2/watches/${TEAM}-watch" 2>/dev/null || true
 
+  # Watch only swiftship-* repos, scoped to the swiftship project.
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
     -X POST "$JFROG_URL/xray/api/v2/watches" \
     -d "{
-      \"general_data\": {\"name\": \"${PREFIX}-watch\", \"active\": true},
-      \"project_resources\": {\"resources\": [{\"type\": \"all-repos\"}]},
+      \"general_data\": {\"name\": \"${TEAM}-watch\", \"active\": true},
+      \"project_key\": \"$PROJECT_KEY\",
+      \"project_resources\": {\"resources\": [{
+        \"type\": \"repository\",
+        \"name\": \"${TEAM}-*\",
+        \"filters\": []
+      }]},
       \"assigned_policies\": [
-        {\"name\": \"${PREFIX}-dev-policy\", \"type\": \"security\"},
-        {\"name\": \"${PREFIX}-license-policy\", \"type\": \"license\"}
+        {\"name\": \"${TEAM}-dev-policy\",    \"type\": \"security\"},
+        {\"name\": \"${TEAM}-license-policy\", \"type\": \"license\"}
       ]
     }" 2>/dev/null && ok "Xray watch created" || skip "Xray watch"
 fi
