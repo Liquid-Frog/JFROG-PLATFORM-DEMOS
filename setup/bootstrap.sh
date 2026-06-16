@@ -42,6 +42,21 @@ create() {
     echo "  ⚠️  $KEY returned HTTP $STATUS"
   fi
 }
+xray_post() {
+  local LABEL=$1 URL=$2 DATA=$3
+  local TMPFILE STATUS
+  TMPFILE=$(mktemp)
+  STATUS=$(curl -s -o "$TMPFILE" -w "%{http_code}" \
+    -H "Authorization: Bearer $JFROG_TOKEN" \
+    -H "Content-Type: application/json" \
+    -X POST "$URL" -d "$DATA" 2>/dev/null)
+  if [[ "$STATUS" == "200" || "$STATUS" == "201" ]]; then
+    ok "$LABEL"
+  else
+    echo "  ⚠️  $LABEL returned HTTP $STATUS: $(cat "$TMPFILE")"
+  fi
+  rm -f "$TMPFILE"
+}
 
 echo
 echo "╔══════════════════════════════════════════════╗"
@@ -142,11 +157,9 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
   done
 
   # Dev policy: warn on high, block on critical
-  curl -s -o /dev/null \
-    -H "Authorization: Bearer $JFROG_TOKEN" \
-    -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
-    -d "{
+  xray_post "Dev policy created" \
+    "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
+    "{
       \"name\": \"${TEAM}-dev-policy\",
       \"type\": \"security\",
       \"rules\": [{
@@ -154,14 +167,12 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
         \"criteria\": {\"min_severity\": \"high\"},
         \"actions\": {\"fail_build\": false, \"notify_deployer\": true}
       }]
-    }" 2>/dev/null && ok "Dev policy created" || skip "Dev policy"
+    }"
 
   # Stage policy: block on high+
-  curl -s -o /dev/null \
-    -H "Authorization: Bearer $JFROG_TOKEN" \
-    -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
-    -d "{
+  xray_post "Stage policy created" \
+    "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
+    "{
       \"name\": \"${TEAM}-stage-policy\",
       \"type\": \"security\",
       \"rules\": [{
@@ -169,14 +180,12 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
         \"criteria\": {\"min_severity\": \"high\"},
         \"actions\": {\"fail_build\": true, \"block_release_bundle_distribution\": true}
       }]
-    }" 2>/dev/null && ok "Stage policy created" || skip "Stage policy"
+    }"
 
   # Prod policy: block on medium+ AND license violations
-  curl -s -o /dev/null \
-    -H "Authorization: Bearer $JFROG_TOKEN" \
-    -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
-    -d "{
+  xray_post "Prod policy created" \
+    "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
+    "{
       \"name\": \"${TEAM}-prod-policy\",
       \"type\": \"security\",
       \"rules\": [{
@@ -184,14 +193,12 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
         \"criteria\": {\"min_severity\": \"medium\"},
         \"actions\": {\"fail_build\": true, \"block_release_bundle_distribution\": true}
       }]
-    }" 2>/dev/null && ok "Prod policy created" || skip "Prod policy"
+    }"
 
   # License policy: block AGPL, GPL in payments
-  curl -s -o /dev/null \
-    -H "Authorization: Bearer $JFROG_TOKEN" \
-    -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
-    -d "{
+  xray_post "License policy created" \
+    "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
+    "{
       \"name\": \"${TEAM}-license-policy\",
       \"type\": \"license\",
       \"rules\": [{
@@ -199,7 +206,7 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
         \"criteria\": {\"banned_licenses\": [\"AGPL-3.0\",\"GPL-2.0\",\"GPL-3.0\"]},
         \"actions\": {\"fail_build\": true}
       }]
-    }" 2>/dev/null && ok "License policy created" || skip "License policy"
+    }"
 
   step "Creating Xray watches"
   # Delete existing watch before recreating with correct scope.
@@ -209,11 +216,9 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
     2>/dev/null || true
 
   # Watch only swiftship-* repos, scoped to the swiftship project.
-  curl -s -o /dev/null \
-    -H "Authorization: Bearer $JFROG_TOKEN" \
-    -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/watches?projectKey=$PROJECT_KEY" \
-    -d "{
+  xray_post "Xray watch created" \
+    "$JFROG_URL/xray/api/v2/watches?projectKey=$PROJECT_KEY" \
+    "{
       \"general_data\": {\"name\": \"${TEAM}-watch\", \"active\": true},
       \"project_resources\": {\"resources\": [{
         \"type\": \"repository\",
@@ -224,7 +229,7 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
         {\"name\": \"${TEAM}-dev-policy\",    \"type\": \"security\"},
         {\"name\": \"${TEAM}-license-policy\", \"type\": \"license\"}
       ]
-    }" 2>/dev/null && ok "Xray watch created" || skip "Xray watch"
+    }"
 fi
 
 echo
