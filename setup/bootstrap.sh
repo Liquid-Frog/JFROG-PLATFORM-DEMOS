@@ -132,11 +132,20 @@ fi
 if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
   step "Creating Xray security policies"
 
+  # Clean up existing policies so re-runs don't silently skip stale config.
+  # projectKey is a URL query param — not supported in the request body.
+  for POLICY in dev-policy stage-policy prod-policy license-policy; do
+    curl -s -o /dev/null \
+      -H "Authorization: Bearer $JFROG_TOKEN" \
+      -X DELETE "$JFROG_URL/xray/api/v2/policies/${TEAM}-${POLICY}?projectKey=$PROJECT_KEY" \
+      2>/dev/null || true
+  done
+
   # Dev policy: warn on high, block on critical
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/policies" \
+    -X POST "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
     -d "{
       \"name\": \"${TEAM}-dev-policy\",
       \"type\": \"security\",
@@ -151,7 +160,7 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/policies" \
+    -X POST "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
     -d "{
       \"name\": \"${TEAM}-stage-policy\",
       \"type\": \"security\",
@@ -166,7 +175,7 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/policies" \
+    -X POST "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
     -d "{
       \"name\": \"${TEAM}-prod-policy\",
       \"type\": \"security\",
@@ -181,7 +190,7 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/policies" \
+    -X POST "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
     -d "{
       \"name\": \"${TEAM}-license-policy\",
       \"type\": \"license\",
@@ -193,19 +202,19 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
     }" 2>/dev/null && ok "License policy created" || skip "License policy"
 
   step "Creating Xray watches"
-  # Delete any existing over-broad watch before recreating with correct scope.
+  # Delete existing watch before recreating with correct scope.
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
-    -X DELETE "$JFROG_URL/xray/api/v2/watches/${TEAM}-watch" 2>/dev/null || true
+    -X DELETE "$JFROG_URL/xray/api/v2/watches/${TEAM}-watch?projectKey=$PROJECT_KEY" \
+    2>/dev/null || true
 
   # Watch only swiftship-* repos, scoped to the swiftship project.
   curl -s -o /dev/null \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
-    -X POST "$JFROG_URL/xray/api/v2/watches" \
+    -X POST "$JFROG_URL/xray/api/v2/watches?projectKey=$PROJECT_KEY" \
     -d "{
       \"general_data\": {\"name\": \"${TEAM}-watch\", \"active\": true},
-      \"project_key\": \"$PROJECT_KEY\",
       \"project_resources\": {\"resources\": [{
         \"type\": \"repository\",
         \"name\": \"${TEAM}-*\",
