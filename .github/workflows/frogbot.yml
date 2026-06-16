@@ -1,25 +1,26 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# frogbot.yml — Automated PR security scanning and fix-PR creation
+# frogbot.yml — Automated PR security scanning and repository fix-PR creation
 #
-# JOB 1 — scan-pr  (trigger: pull_request)
+# JOB 1 — scan-pr  (trigger: pull_request_target)
 #   Scans every incoming PR for new vulnerabilities introduced by the diff.
 #   Posts a summary comment on the PR with CVE details, severity, and CVSS.
-#   Does NOT scan vulnerabilities already present in the base branch — only
-#   net-new findings from the PR's changes.
+#   Uses pull_request_target (not pull_request) so fork PRs can post comments
+#   via the base repo's GITHUB_TOKEN without exposing secrets to PR code.
+#   The `environment: frogbot` gate protects against untrusted fork runs.
 #
-# JOB 2 — fix-prs  (trigger: push to main)
+# JOB 2 — scan-repository  (trigger: push to main)
 #   After a PR merges, scans the default branch and automatically opens fix
 #   PRs for any dependency with an available upgrade that resolves a CVE.
-#   Each fix PR targets a single package to keep reviews small.
+#   Replaces the v2 "create-fix-pull-requests" command — v3 infers the
+#   operation from the trigger event, no cmd: input required.
 #
-# Auth / secrets required:
-#   JFROG_URL   — repo secret: your JFrog instance URL
-#   JFROG_TOKEN — repo secret: access token with Xray read permissions
+# Auth: JFrog OIDC (zero-secret) via oidc-provider-name with:
+#   JF_URL from vars.JF_URL (repository variable, not secret)
 #   GITHUB_TOKEN is provided automatically by GitHub Actions.
 #
 # For fix-PR creation (job 2) the automatic GITHUB_TOKEN must have
-# "Read and write" permissions for Contents and Pull requests, OR you can
-# store a PAT as a secret named GH_TOKEN and reference it below instead.
+# "Read and write" permissions for Contents and Pull requests, OR store a
+# PAT as secret GH_TOKEN with repo + workflow scopes and reference it below.
 #
 # Advanced config (scan scope, watched repos, email notifications):
 #   Create .frogbot/frogbot-config.yml — see https://docs.jfrog.com/frogbot
@@ -28,7 +29,7 @@
 name: Frogbot — PR Scan & Fix
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
     branches:
       - main
@@ -37,64 +38,49 @@ on:
       - main
 
 permissions:
-  contents: write       # fix-PR job pushes new branches
+  contents: write       # scan-repository job pushes fix branches
   pull-requests: write  # both jobs post comments and open PRs
   security-events: write
-  id-token: write
+  id-token: write       # required for OIDC token exchange
 
 jobs:
   # ── Job 1: scan the incoming PR for new vulnerabilities ──────────────────
   scan-pr:
     name: Frogbot — Scan PR
     runs-on: ubuntu-latest
-    # Only run on pull_request events (not push).
-    # Note: for public repos with external forks, consider switching to
-    # pull_request_target (see Frogbot security docs before doing so).
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request_target'
+    # Required with pull_request_target: GitHub environment gate that prevents
+    # untrusted fork code from triggering a run before a maintainer approves.
+    environment: frogbot
 
     steps:
       - name: Frogbot — Scan pull request
-        uses: jfrog/frogbot@v2
+        uses: jfrog/frogbot@v3
         env:
-          # JFrog platform connection
-          JF_URL:                ${{ vars.JF_URL }}
-          JF_OIDC_PROVIDER_NAME: Liquid-Frog/JFROG-PLATFORM-DEMOS@github
-
-          # GitHub connection — the auto-generated token is sufficient for
-          # posting PR comments on repos within the same organization.
+          JF_URL:       ${{ vars.JF_URL }}
           JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-          # Optional: namespace findings under a JFrog Project
-          JF_PROJECT: ${{ vars.JFROG_PROJECT_KEY }}
+          JF_PROJECT:   ${{ vars.JFROG_PROJECT_KEY }}
         with:
-          cmd: scan-pull-request
+          oidc-provider-name: Liquid-Frog/JFROG-PLATFORM-DEMOS@github
 
-  # ── Job 2: create fix PRs for vulnerable deps on main ───────────────────
-  fix-prs:
-    name: Frogbot — Create Fix PRs
+  # ── Job 2: scan repo and create fix PRs after a merge to main ────────────
+  scan-repository:
+    name: Frogbot — Scan Repository
     runs-on: ubuntu-latest
-    # Only run when a PR merges to main (push event on the default branch).
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        branch: ["main"]
 
     steps:
-      - name: Frogbot — Create fix pull requests
-        uses: jfrog/frogbot@v2
+      - name: Frogbot — Scan repository and create fix PRs
+        uses: jfrog/frogbot@v3
         env:
-          # JFrog platform connection
-          JF_URL:                ${{ vars.JF_URL }}
-          JF_OIDC_PROVIDER_NAME: Liquid-Frog/JFROG-PLATFORM-DEMOS@github
-
-          # GitHub connection — the auto-generated GITHUB_TOKEN works here
-          # only when repo Settings → Actions → "Allow GitHub Actions to create
-          # and approve pull requests" is enabled. Otherwise use a PAT stored
-          # as secret GH_TOKEN with repo + workflow scopes.
-          JF_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-          # Optional: namespace findings under a JFrog Project
-          JF_PROJECT: ${{ vars.JFROG_PROJECT_KEY }}
-
-          # Identity used for fix-PR commits
-          JF_GIT_EMAIL:    frogbot@swiftship-demo.invalid
-          JF_GIT_USERNAME: frogbot
+          JF_URL:             ${{ vars.JF_URL }}
+          JF_GIT_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
+          JF_GIT_BASE_BRANCH: ${{ matrix.branch }}
+          JF_PROJECT:         ${{ vars.JFROG_PROJECT_KEY }}
+          JF_GIT_EMAIL:       frogbot@swiftship-demo.invalid
+          JF_GIT_USERNAME:    frogbot
         with:
-          cmd: create-fix-pull-requests
+          oidc-provider-name: Liquid-Frog/JFROG-PLATFORM-DEMOS@github
