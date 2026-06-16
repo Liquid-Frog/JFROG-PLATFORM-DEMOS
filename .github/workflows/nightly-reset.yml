@@ -45,6 +45,9 @@ jobs:
   reset:
     name: Reset and re-seed demo environment
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # required for OIDC token exchange on schedule/workflow_dispatch
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
