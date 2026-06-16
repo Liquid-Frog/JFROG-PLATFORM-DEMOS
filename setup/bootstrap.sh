@@ -26,21 +26,22 @@ MODE="${1:-all}"
 
 step()   { echo; echo "━━━ $1"; }
 ok()     { echo "  ✅  $1"; }
-skip()   { echo "  ⏭️   $1 (already exists)"; }
-create() {
-  local TYPE=$1 KEY=$2 PAYLOAD=$3
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+skip()     { echo "  ⏭️   $1 (already exists)"; }
+repo_put() {
+  local LABEL=$1 KEY=$2 PAYLOAD=$3
+  local TMPFILE STATUS
+  TMPFILE=$(mktemp)
+  STATUS=$(curl -s -o "$TMPFILE" -w "%{http_code}" \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
     -X PUT "$JFROG_URL/artifactory/api/repositories/$KEY" \
     -d "$PAYLOAD" 2>/dev/null)
   if [[ "$STATUS" == "200" || "$STATUS" == "201" ]]; then
-    ok "Created $TYPE repo: $KEY"
-  elif [[ "$STATUS" == "400" ]]; then
-    skip "$KEY"
+    ok "$LABEL: $KEY"
   else
-    echo "  ⚠️  $KEY returned HTTP $STATUS"
+    echo "  ⚠️  $KEY returned HTTP $STATUS: $(cat "$TMPFILE")"
   fi
+  rm -f "$TMPFILE"
 }
 xray_post() {
   local LABEL=$1 URL=$2 DATA=$3
@@ -96,51 +97,70 @@ ok "JFrog CLI server configured (id: $JF_SERVER_ID)"
 
 # ── Create Artifactory repos ─────────────────────────────────────
 if [[ "$MODE" == "all" || "$MODE" == "--packages" ]]; then
-  step "Creating Artifactory repositories (team-tech-maturity-locator)"
+  PREFIX="${JFROG_REPO_PREFIX:-swiftship}"
+  step "Creating Artifactory repositories (${PREFIX}-{pkg}-{maturity}-{locator})"
 
-  # Traditional package types with public registry remote URLs
-  for PKG in maven npm pypi docker go nuget helm gradle; do
+  for PKG in maven gradle npm pypi docker go nuget helm; do
     case $PKG in
-      maven)   RTYPE="maven"  REMOTE_URL="https://repo1.maven.org/maven2" ;;
-      npm)     RTYPE="npm"    REMOTE_URL="https://registry.npmjs.org" ;;
-      pypi)    RTYPE="pypi"   REMOTE_URL="https://pypi.org" ;;
-      docker)  RTYPE="docker" REMOTE_URL="https://registry-1.docker.io" ;;
-      go)      RTYPE="go"     REMOTE_URL="https://proxy.golang.org" ;;
-      nuget)   RTYPE="nuget"  REMOTE_URL="https://api.nuget.org/v3/index.json" ;;
-      helm)    RTYPE="helm"   REMOTE_URL="https://charts.helm.sh/stable" ;;
-      gradle)  RTYPE="gradle" REMOTE_URL="https://repo1.maven.org/maven2" ;;
+      maven|gradle) LAYOUT="maven-2-default" ; UPSTREAM="https://repo1.maven.org/maven2" ;;
+      npm)          LAYOUT="npm-default"      ; UPSTREAM="https://registry.npmjs.org" ;;
+      pypi)         LAYOUT="simple-default"   ; UPSTREAM="https://pypi.org" ;;
+      docker)       LAYOUT="simple-default"   ; UPSTREAM="https://registry-1.docker.io" ;;
+      go)           LAYOUT="go-default"       ; UPSTREAM="https://proxy.golang.org" ;;
+      nuget)        LAYOUT="nuget-default"    ; UPSTREAM="https://api.nuget.org/v3/index.json" ;;
+      helm)         LAYOUT="simple-default"   ; UPSTREAM="https://charts.helm.sh/stable" ;;
     esac
 
-    for ENV in dev stage prod; do
-      LOCAL="${TEAM}-${PKG}-${ENV}-local"
-      REMOTE="${TEAM}-${PKG}-${ENV}-remote"
-      VIRTUAL="${TEAM}-${PKG}-${ENV}-virtual"
+    for MATURITY in dev stage prod; do
+      case $MATURITY in
+        dev)   ENV_TAG="DEV"  ;;
+        stage) ENV_TAG="TEST" ;;
+        prod)  ENV_TAG="PROD" ;;
+      esac
 
-      create "local"   "$LOCAL"   \
-        "{\"key\":\"$LOCAL\",\"rclass\":\"local\",\"packageType\":\"$RTYPE\"}"
-      create "remote"  "$REMOTE"  \
-        "{\"key\":\"$REMOTE\",\"rclass\":\"remote\",\"packageType\":\"$RTYPE\",\"url\":\"$REMOTE_URL\"}"
-      # Virtual aggregates local first, then falls back to remote proxy cache
-      create "virtual" "$VIRTUAL" \
-        "{\"key\":\"$VIRTUAL\",\"rclass\":\"virtual\",\"packageType\":\"$RTYPE\",\"repositories\":[\"$LOCAL\",\"$REMOTE\"]}"
+      LOCAL="${PREFIX}-${PKG}-${MATURITY}-local"
+      REMOTE="${PREFIX}-${PKG}-${MATURITY}-remote"
+      VIRTUAL="${PREFIX}-${PKG}-${MATURITY}-virtual"
+
+      # projectKey and environments are omitted entirely when JFROG_PROJECT_KEY is unset
+      if [[ -n "${JFROG_PROJECT_KEY:-}" ]]; then
+        PROJ=", \"projectKey\": \"$JFROG_PROJECT_KEY\", \"environments\": [\"$ENV_TAG\"]"
+      else
+        PROJ=""
+      fi
+
+      repo_put "local" "$LOCAL" \
+        "{\"key\":\"$LOCAL\",\"rclass\":\"local\",\"packageType\":\"$PKG\",\"repoLayoutRef\":\"$LAYOUT\",\"xrayIndex\":true,\"description\":\"SwiftShip $PKG $MATURITY local repository\"$PROJ}"
+
+      repo_put "remote" "$REMOTE" \
+        "{\"key\":\"$REMOTE\",\"rclass\":\"remote\",\"packageType\":\"$PKG\",\"repoLayoutRef\":\"$LAYOUT\",\"url\":\"$UPSTREAM\",\"xrayIndex\":true,\"description\":\"SwiftShip $PKG $MATURITY remote proxy\"$PROJ}"
+
+      repo_put "virtual" "$VIRTUAL" \
+        "{\"key\":\"$VIRTUAL\",\"rclass\":\"virtual\",\"packageType\":\"$PKG\",\"repoLayoutRef\":\"$LAYOUT\",\"repositories\":[\"$LOCAL\",\"$REMOTE\"],\"defaultDeploymentRepo\":\"$LOCAL\",\"description\":\"SwiftShip $PKG $MATURITY virtual repository\"$PROJ}"
     done
   done
 
-  # AI/ML package types (no per-environment split)
-  for PKG in huggingface ml oci; do
-    case $PKG in
-      huggingface) RTYPE="huggingfaceml" ;;
-      ml)          RTYPE="ml" ;;
-      oci)         RTYPE="oci" ;;
-    esac
-    REPO="${TEAM}-${PKG}-local"
-    create "local" "$REPO" "{\"key\":\"$REPO\",\"rclass\":\"local\",\"packageType\":\"$RTYPE\"}"
-  done
+  # AI/ML and Agentic repos — dev-only, no maturity split
+  if [[ -n "${JFROG_PROJECT_KEY:-}" ]]; then
+    AIML_PROJ=", \"projectKey\": \"$JFROG_PROJECT_KEY\", \"environments\": [\"DEV\"]"
+  else
+    AIML_PROJ=""
+  fi
 
-  # Agentic repos
-  create "local" "${TEAM}-skills-local"        "{\"key\":\"${TEAM}-skills-local\",\"rclass\":\"local\",\"packageType\":\"skills\"}"
-  create "local" "${TEAM}-agent-plugins-local" "{\"key\":\"${TEAM}-agent-plugins-local\",\"rclass\":\"local\",\"packageType\":\"agentplugins\"}"
-  create "local" "${TEAM}-ai-editor-ext-local" "{\"key\":\"${TEAM}-ai-editor-ext-local\",\"rclass\":\"local\",\"packageType\":\"aieditorext\"}"
+  for SPEC in \
+    "huggingface:huggingfaceml" \
+    "ml:ml" \
+    "oci:oci" \
+    "skills:skills" \
+    "agent-plugins:agentplugins" \
+    "ai-editor-ext:aieditorext"
+  do
+    PKG="${SPEC%%:*}"
+    RTYPE="${SPEC##*:}"
+    REPO="${PREFIX}-${PKG}-local"
+    repo_put "local" "$REPO" \
+      "{\"key\":\"$REPO\",\"rclass\":\"local\",\"packageType\":\"$RTYPE\",\"xrayIndex\":true,\"description\":\"SwiftShip $PKG repository\"$AIML_PROJ}"
+  done
 fi
 
 # ── Xray watches + policies ──────────────────────────────────────
