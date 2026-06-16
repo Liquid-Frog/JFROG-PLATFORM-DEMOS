@@ -75,7 +75,7 @@ echo "  Build     : ${BUILD_NAME}@${BUILD_NUMBER}"
 step "1 / 5  Verify Artifactory Maven repos"
 ALL_REPOS_OK=true
 for repo in "$REPO_DEV" "$REPO_STAGE" "$REPO_PROD"; do
-  if jf rt curl -s "api/repositories/${repo}" --server-id=swiftship 2>/dev/null | grep -q '"key"'; then
+  if jf rt curl -s "api/repositories/${repo}" --server-id=$JF_SERVER_ID 2>/dev/null | grep -q '"key"'; then
     pass "Repo ${repo} exists"
   else
     fail "Repo ${repo} not found — run: ./setup/bootstrap.sh"
@@ -100,10 +100,10 @@ jf mvn-config \
   --repo-resolve-snapshots="${REPO_DEV}" \
   --repo-deploy-releases="${REPO_DEV}" \
   --repo-deploy-snapshots="${REPO_DEV}" \
-  --server-id-resolve=swiftship \
-  --server-id-deploy=swiftship \
+  --server-id-resolve=$JF_SERVER_ID \
+  --server-id-deploy=$JF_SERVER_ID \
   2>/dev/null
-pass "JFrog CLI configured for Maven (server: swiftship → ${REPO_DEV})"
+pass "JFrog CLI configured for Maven (server: $JF_SERVER_ID → ${REPO_DEV})"
 
 if [[ "$MAVEN_AVAILABLE" == true ]]; then
   echo "  Running: jf mvn deploy -DskipTests ..."
@@ -117,8 +117,8 @@ if [[ "$MAVEN_AVAILABLE" == true ]]; then
     }
 
   # Publish build info to Artifactory (enables Xray build scanning)
-  jf rt bce "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=swiftship 2>/dev/null || true
-  jf rt bp  "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=swiftship 2>/dev/null || true
+  jf rt bce "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=$JF_SERVER_ID 2>/dev/null || true
+  jf rt bp  "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=$JF_SERVER_ID 2>/dev/null || true
   pass "Deployed auth-service-demo-1.0.0.jar to ${REPO_DEV}"
 else
   warn "Skipping mvn deploy (JDK/Maven not available) — Xray audit still works"
@@ -131,7 +131,7 @@ step "3 / 5  Xray scan — CVE-2025-41234 (Spring Framework RCE, CVSS 9.8)"
 echo "  Querying Xray for spring-core 6.1.6 artifact..."
 hr
 jf xr curl -s "/api/v1/summary/artifact" \
-  --server-id=swiftship \
+  --server-id=$JF_SERVER_ID \
   -X POST \
   -H "Content-Type: application/json" \
   -d "{\"paths\":[\"default/${REPO_DEV}/org/springframework/spring-core/6.1.6/spring-core-6.1.6.jar\"]}" \
@@ -141,7 +141,7 @@ jf xr curl -s "/api/v1/summary/artifact" \
 echo
 echo "  Running local project audit (full Maven dependency tree)..."
 cd "$APP_DIR"
-jf audit --mvn --server-id=swiftship --format=table 2>&1 | head -40 || true
+jf audit --mvn --server-id=$JF_SERVER_ID --format=table 2>&1 | head -40 || true
 cd "$SCRIPT_DIR"
 
 hr
@@ -171,14 +171,14 @@ set +e
 if command -v jf &>/dev/null; then
   PROMOTE_OUTPUT=$(jf apptrust version-promote swiftship-auth-service 1.0.0 STAGE \
     --sync=true \
-    --server-id=swiftship 2>&1 || true)
+    --server-id=$JF_SERVER_ID 2>&1 || true)
 
   # Fall back to Xray build scan if AppTrust not available
   if echo "$PROMOTE_OUTPUT" | grep -qi "not found\|unknown command\|404"; then
     PROMOTE_OUTPUT=$(jf rt bpr "${BUILD_NAME}" "${BUILD_NUMBER}" "${REPO_STAGE}" \
       --copy=false \
       --status=Staged \
-      --server-id=swiftship \
+      --server-id=$JF_SERVER_ID \
       --fail-fast=true 2>&1 || true)
   fi
 fi
@@ -233,7 +233,7 @@ if [[ "$MAVEN_AVAILABLE" == true ]]; then
 fi
 
 echo "  Re-running Xray audit on fixed dependency tree..."
-jf audit --mvn --server-id=swiftship --format=table 2>&1 | head -30 || true
+jf audit --mvn --server-id=$JF_SERVER_ID --format=table 2>&1 | head -30 || true
 
 # Restore original pom.xml for repeatability
 cp /tmp/pom-maven-demo.xml.bak pom.xml

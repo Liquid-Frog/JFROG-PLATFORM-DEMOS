@@ -68,7 +68,7 @@ echo "  Build     : ${BUILD_NAME}@${BUILD_NUMBER}"
 step "1 / 5  Verify Artifactory PyPI repos"
 ALL_REPOS_OK=true
 for repo in "$REPO_DEV" "$REPO_STAGE" "$REPO_PROD"; do
-  if jf rt curl -s "api/repositories/${repo}" --server-id=swiftship 2>/dev/null | grep -q '"key"'; then
+  if jf rt curl -s "api/repositories/${repo}" --server-id=$JF_SERVER_ID 2>/dev/null | grep -q '"key"'; then
     pass "Repo ${repo} exists"
   else
     fail "Repo ${repo} not found — run: ./setup/bootstrap.sh"
@@ -87,10 +87,10 @@ hr
 jf pipc \
   --repo-resolve="${REPO_DEV}" \
   --repo-deploy="${REPO_DEV}" \
-  --server-id-resolve=swiftship \
-  --server-id-deploy=swiftship \
+  --server-id-resolve=$JF_SERVER_ID \
+  --server-id-deploy=$JF_SERVER_ID \
   2>/dev/null
-pass "JFrog CLI configured for PyPI (server: swiftship → ${REPO_DEV})"
+pass "JFrog CLI configured for PyPI (server: $JF_SERVER_ID → ${REPO_DEV})"
 
 cd "$APP_DIR"
 
@@ -126,20 +126,20 @@ if ls dist/*.whl 2>/dev/null | head -1 | grep -q '.'; then
   jf rt u "dist/*.whl" "${REPO_DEV}/" \
     --build-name="${BUILD_NAME}" \
     --build-number="${BUILD_NUMBER}" \
-    --server-id=swiftship \
+    --server-id=$JF_SERVER_ID \
     2>&1 | tail -3 || true
   pass "Wheel published to ${REPO_DEV}"
 else
   # Fallback: upload requirements.txt so Xray can scan it
   jf rt u "requirements.txt" "${REPO_DEV}/swiftship-booking-demo/" \
-    --server-id=swiftship \
+    --server-id=$JF_SERVER_ID \
     2>&1 | tail -3 || true
   pass "requirements.txt uploaded to ${REPO_DEV} (wheel build requires setuptools)"
 fi
 
 # Publish build info for Xray build scanning
-jf rt bce "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=swiftship 2>/dev/null || true
-jf rt bp  "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=swiftship 2>/dev/null || true
+jf rt bce "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=$JF_SERVER_ID 2>/dev/null || true
+jf rt bp  "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=$JF_SERVER_ID 2>/dev/null || true
 pass "Xray indexing triggered for starlette 0.36.3 and langflow 1.1.4"
 deactivate 2>/dev/null || true
 cd "$SCRIPT_DIR"
@@ -150,7 +150,7 @@ step "3 / 5  Xray scan — CVE-2024-47874 (Starlette multipart DoS, CVSS 8.7)"
 echo "  Querying Xray for starlette 0.36.3..."
 hr
 jf xr curl -s "/api/v1/summary/artifact" \
-  --server-id=swiftship \
+  --server-id=$JF_SERVER_ID \
   -X POST \
   -H "Content-Type: application/json" \
   -d "{\"paths\":[\"default/${REPO_DEV}/starlette/starlette-0.36.3.tar.gz\"]}" \
@@ -160,7 +160,7 @@ jf xr curl -s "/api/v1/summary/artifact" \
 echo
 echo "  Running local project audit (full pip dependency tree)..."
 cd "$APP_DIR"
-jf audit --pip --server-id=swiftship --format=table 2>&1 | head -40 || true
+jf audit --pip --server-id=$JF_SERVER_ID --format=table 2>&1 | head -40 || true
 cd "$SCRIPT_DIR"
 
 hr
@@ -180,7 +180,7 @@ echo "  Querying Xray for langflow 1.1.4..."
 echo "  This CVE is on the CISA Known Exploited Vulnerabilities catalog."
 hr
 jf xr curl -s "/api/v1/summary/artifact" \
-  --server-id=swiftship \
+  --server-id=$JF_SERVER_ID \
   -X POST \
   -H "Content-Type: application/json" \
   -d "{\"paths\":[\"default/${REPO_DEV}/langflow/langflow-1.1.4.tar.gz\"]}" \
@@ -201,7 +201,7 @@ echo
 echo "  Stage promotion gate (BLOCKED):"
 set +e
 PROMOTE_OUTPUT=$(jf apptrust version-promote swiftship-booking-service 1.0.0 STAGE \
-  --sync=true --server-id=swiftship 2>&1 || true)
+  --sync=true --server-id=$JF_SERVER_ID 2>&1 || true)
 set -e
 if echo "$PROMOTE_OUTPUT" | grep -qiE "blocked|violation|policy|error|CVE"; then
   pass "Stage gate BLOCKED — CVE-2025-3248 (CISA KEV) exceeds CVSS threshold"
@@ -239,7 +239,7 @@ echo "  Installing fixed versions..."
 pip install starlette==0.40.0 langflow==1.3.0 --no-deps --quiet 2>&1 | tail -5 || true
 
 echo "  Re-running Xray audit on fixed requirements..."
-jf audit --pip --server-id=swiftship --format=table 2>&1 | head -30 || true
+jf audit --pip --server-id=$JF_SERVER_ID --format=table 2>&1 | head -30 || true
 deactivate 2>/dev/null || true
 
 # Restore original requirements.txt

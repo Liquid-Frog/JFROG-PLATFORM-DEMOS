@@ -52,7 +52,7 @@ echo "╚═══════════════════════�
 
 step "1 / 5  Verify Artifactory repos exist"
 for repo in "$REPO_DEV" "$REPO_STAGE" "$REPO_PROD"; do
-  if jf rt curl -s "api/repositories/$repo" --server-id=swiftship | grep -q '"key"'; then
+  if jf rt curl -s "api/repositories/$repo" --server-id=$JF_SERVER_ID | grep -q '"key"'; then
     pass "Repo $repo exists"
   else
     fail "Repo $repo not found — did you run setup/bootstrap.sh?"
@@ -62,13 +62,13 @@ pause
 
 step "2 / 5  Upload a vulnerable package to dev repo"
 # REPLACE: add package-type-specific upload command
-# Example: jf rt u "sample-app/target/*.jar" "$REPO_DEV/" --server-id=swiftship
+# Example: jf rt u "sample-app/target/*.jar" "$REPO_DEV/" --server-id=$JF_SERVER_ID
 echo "  (replace this with package-specific upload)"
 pause
 
 step "3 / 5  Trigger Xray scan and show findings"
 jf xr curl -s "api/v1/summary/artifact" \
-  --server-id=swiftship \
+  --server-id=$JF_SERVER_ID \
   -d "{\"paths\":[\"default/$REPO_DEV/REPLACE_ARTIFACT_PATH\"]}" \
   -H "Content-Type: application/json" | python3 -m json.tool || true
 pause

@@ -67,7 +67,7 @@ echo "  Build     : ${BUILD_NAME}@${BUILD_NUMBER}"
 step "1 / 5  Verify Artifactory npm repos"
 ALL_REPOS_OK=true
 for repo in "$REPO_DEV" "$REPO_STAGE" "$REPO_PROD"; do
-  if jf rt curl -s "api/repositories/${repo}" --server-id=swiftship 2>/dev/null | grep -q '"key"'; then
+  if jf rt curl -s "api/repositories/${repo}" --server-id=$JF_SERVER_ID 2>/dev/null | grep -q '"key"'; then
     pass "Repo ${repo} exists"
   else
     fail "Repo ${repo} not found — run: ./setup/bootstrap.sh"
@@ -87,10 +87,10 @@ hr
 jf npmc \
   --repo-resolve="${REPO_DEV}" \
   --repo-deploy="${REPO_DEV}" \
-  --server-id-resolve=swiftship \
-  --server-id-deploy=swiftship \
+  --server-id-resolve=$JF_SERVER_ID \
+  --server-id-deploy=$JF_SERVER_ID \
   2>/dev/null
-pass "JFrog CLI configured for npm (server: swiftship → ${REPO_DEV})"
+pass "JFrog CLI configured for npm (server: $JF_SERVER_ID → ${REPO_DEV})"
 
 cd "$SCRIPT_DIR/sample-app"
 
@@ -104,12 +104,12 @@ echo "  Publishing to ${REPO_DEV}..."
 jf npm publish \
   --build-name="${BUILD_NAME}" \
   --build-number="${BUILD_NUMBER}" \
-  --server-id=swiftship \
+  --server-id=$JF_SERVER_ID \
   2>&1 | tail -5 || true
 
 # Collect build info and publish it (enables Xray build scanning)
-jf rt bce "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=swiftship 2>/dev/null || true
-jf rt bp  "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=swiftship 2>/dev/null || true
+jf rt bce "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=$JF_SERVER_ID 2>/dev/null || true
+jf rt bp  "${BUILD_NAME}" "${BUILD_NUMBER}" --server-id=$JF_SERVER_ID 2>/dev/null || true
 pass "Published ${BUILD_NAME}@1.0.0 to ${REPO_DEV} — Xray indexing triggered"
 cd "$SCRIPT_DIR"
 pause
@@ -119,7 +119,7 @@ step "3 / 5  Xray scan — CVE-2024-21538 (cross-spawn ReDoS, CVSS 7.5)"
 echo "  Querying Xray for cross-spawn 7.0.3 artifact summary..."
 hr
 jf xr curl -s "/api/v1/summary/artifact" \
-  --server-id=swiftship \
+  --server-id=$JF_SERVER_ID \
   -X POST \
   -H "Content-Type: application/json" \
   -d "{\"paths\":[\"default/${REPO_DEV}/cross-spawn/-/cross-spawn-7.0.3.tgz\"]}" \
@@ -129,7 +129,7 @@ jf xr curl -s "/api/v1/summary/artifact" \
 echo
 echo "  Running local project audit (full dependency tree)..."
 cd "$SCRIPT_DIR/sample-app"
-jf audit --npm --server-id=swiftship --format=table 2>&1 | head -40 || true
+jf audit --npm --server-id=$JF_SERVER_ID --format=table 2>&1 | head -40 || true
 cd "$SCRIPT_DIR"
 
 hr
@@ -202,7 +202,7 @@ jf npm install --no-fund --no-audit 2>&1 | grep -v "^npm warn" | tail -8 || true
 # Re-audit — should show no CVSS >= 7.5 findings
 echo
 echo "  Re-running Xray audit on fixed dependency tree..."
-jf audit --npm --server-id=swiftship --format=table 2>&1 | head -30 || true
+jf audit --npm --server-id=$JF_SERVER_ID --format=table 2>&1 | head -30 || true
 
 # Restore original package.json for repeatability
 cp /tmp/package-npm-demo.json.bak package.json
