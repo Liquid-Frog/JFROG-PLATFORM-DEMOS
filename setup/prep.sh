@@ -19,7 +19,7 @@ SERVICE_FILTER="${2:-all}"
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
-PREFIX="${JFROG_PROJECT_KEY:+${JFROG_PROJECT_KEY}-}${JFROG_REPO_PREFIX:-demo}"
+TEAM="${JFROG_PROJECT_KEY:-swiftship}"
 
 step()  { echo; echo "▶  $1"; }
 ok()    { echo "   ✅  $1"; }
@@ -31,7 +31,7 @@ echo "╔═══════════════════════�
 echo "║  SwiftShip — Night-before prep               ║"
 echo "╚══════════════════════════════════════════════╝"
 echo "  Instance:  $JFROG_URL"
-echo "  Prefix:    $PREFIX"
+echo "  Team:      $TEAM"
 echo "  Dry run:   $DRY_RUN"
 
 # Configure JFrog CLI server
@@ -47,12 +47,13 @@ ok "JFrog CLI configured (server: swiftship)"
 if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "auth" ]]; then
   step "Seeding auth-service (Maven — CVE-2025-41234, CVE-2025-41248)"
   run jf mvn-config \
-    --repo-resolve-releases="${PREFIX}-maven-dev" \
-    --repo-resolve-snapshots="${PREFIX}-maven-dev" \
-    --repo-deploy-releases="${PREFIX}-maven-dev" \
-    --repo-deploy-snapshots="${PREFIX}-maven-dev" \
+    --repo-resolve-releases="${TEAM}-maven-dev-virtual" \
+    --repo-resolve-snapshots="${TEAM}-maven-dev-virtual" \
+    --repo-deploy-releases="${TEAM}-maven-dev-local" \
+    --repo-deploy-snapshots="${TEAM}-maven-dev-local" \
     --server-id-resolve=swiftship \
-    --server-id-deploy=swiftship 2>/dev/null || true
+    --server-id-deploy=swiftship \
+    --user=$JFROG_USER 2>/dev/null || true
 
   cd "$ROOT_DIR/e2e/swiftship/auth-service"
   run jf mvn package -DskipTests --quiet 2>/dev/null || \
@@ -68,8 +69,8 @@ if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "storefront" ]]; then
   step "Seeding storefront-ui (npm — CVE-2024-21538, Shai-Hulud CVE-2025-10894)"
   cd "$ROOT_DIR/e2e/swiftship/storefront-ui"
   run jf npmc \
-    --repo-resolve="${PREFIX}-npm-dev" \
-    --repo-deploy="${PREFIX}-npm-dev" \
+    --repo-resolve="${TEAM}-npm-dev-virtual" \
+    --repo-deploy="${TEAM}-npm-dev-local" \
     --server-id-resolve=swiftship \
     --server-id-deploy=swiftship 2>/dev/null || true
   # Audit without installing (avoids pulling malicious package)
@@ -83,8 +84,8 @@ if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "booking" ]]; then
   step "Seeding booking-service (PyPI — CVE-2024-47874, CVE-2025-3248)"
   cd "$ROOT_DIR/e2e/swiftship/booking-service"
   run jf pipc \
-    --repo-resolve="${PREFIX}-pypi-dev" \
-    --repo-deploy="${PREFIX}-pypi-dev" \
+    --repo-resolve="${TEAM}-pypi-dev-virtual" \
+    --repo-deploy="${TEAM}-pypi-dev-local" \
     --server-id-resolve=swiftship \
     --server-id-deploy=swiftship 2>/dev/null || true
   run jf audit --pip --server-id=swiftship || true
@@ -97,8 +98,8 @@ if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "payments" ]]; then
   step "Seeding payments-service (NuGet — CVE-2024-21907, AGPL license)"
   cd "$ROOT_DIR/e2e/swiftship/payments-service"
   run jf dotnetc \
-    --repo-resolve="${PREFIX}-nuget-dev" \
-    --repo-deploy="${PREFIX}-nuget-dev" \
+    --repo-resolve="${TEAM}-nuget-dev-virtual" \
+    --repo-deploy="${TEAM}-nuget-dev-local" \
     --server-id-resolve=swiftship \
     --server-id-deploy=swiftship 2>/dev/null || true
   run jf audit --nuget --server-id=swiftship || true
@@ -111,8 +112,8 @@ if [[ "$SERVICE_FILTER" == "all" || "$SERVICE_FILTER" == "logistics" ]]; then
   step "Seeding logistics-service (Go — CVE-2025-22869, CVE-2025-22871)"
   cd "$ROOT_DIR/e2e/swiftship/logistics-service"
   run jf go-config \
-    --repo-resolve="${PREFIX}-go-dev" \
-    --repo-deploy="${PREFIX}-go-dev" \
+    --repo-resolve="${TEAM}-go-dev-virtual" \
+    --repo-deploy="${TEAM}-go-dev-local" \
     --server-id-resolve=swiftship \
     --server-id-deploy=swiftship 2>/dev/null || true
   run jf audit --go --server-id=swiftship || true
