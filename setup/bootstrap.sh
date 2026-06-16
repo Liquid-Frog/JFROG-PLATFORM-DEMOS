@@ -147,13 +147,17 @@ fi
 if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
   step "Creating Xray policies"
 
-  # Delete existing policies before recreating so re-runs apply fresh config.
+  # Delete existing policies and watch before recreating (ignore 404).
   for POLICY in security-policy license-policy operational-policy; do
     curl -s -o /dev/null \
       -H "Authorization: Bearer $JFROG_TOKEN" \
       -X DELETE "$JFROG_URL/xray/api/v2/policies/${TEAM}-${POLICY}?projectKey=$PROJECT_KEY" \
       2>/dev/null || true
   done
+  curl -s -o /dev/null \
+    -H "Authorization: Bearer $JFROG_TOKEN" \
+    -X DELETE "$JFROG_URL/xray/api/v2/watches/${TEAM}-watch?projectKey=$PROJECT_KEY" \
+    2>/dev/null || true
 
   # Security policy: CVSS 7.0–8.9 warn, CVSS 9.0–10.0 block
   xray_post "Security policy created" \
@@ -163,16 +167,20 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
       \"type\": \"security\",
       \"rules\": [
         {
-          \"name\": \"warn-high-severity\",
+          \"name\": \"warn-high\",
           \"priority\": 1,
-          \"criteria\": {\"cvss_range\": {\"min_score\": 7.0, \"max_score\": 8.9}},
-          \"actions\": {\"fail_build\": false, \"block_download\": false}
+          \"criteria\": {\"cvss_range\": {\"from\": 7.0, \"to\": 8.9}},
+          \"actions\": {\"fail_build\": false, \"notify_deployer\": true}
         },
         {
-          \"name\": \"block-critical-severity\",
+          \"name\": \"block-critical\",
           \"priority\": 2,
-          \"criteria\": {\"cvss_range\": {\"min_score\": 9.0, \"max_score\": 10.0}},
-          \"actions\": {\"fail_build\": true, \"block_download\": {\"active\": true, \"unscanned\": false}}
+          \"criteria\": {\"cvss_range\": {\"from\": 9.0, \"to\": 10.0}},
+          \"actions\": {
+            \"fail_build\": true,
+            \"block_release_bundle_promotion\": true,
+            \"notify_watch_recipients\": true
+          }
         }
       ]
     }"
@@ -190,43 +198,33 @@ if [[ "$MODE" == "all" || "$MODE" == "--xray" ]]; then
           \"banned_licenses\": [\"AGPL-3.0\",\"GPL-2.0\",\"GPL-3.0\",\"GPL-2.0-only\",\"GPL-3.0-only\"],
           \"allow_unknown\": false
         },
-        \"actions\": {\"fail_build\": true, \"block_download\": {\"active\": true, \"unscanned\": false}}
+        \"actions\": {
+          \"fail_build\": true,
+          \"block_release_bundle_promotion\": true,
+          \"notify_watch_recipients\": true
+        }
       }]
     }"
 
-  # Operational risk policy: warn on EOL components and stale packages
+  # Operational risk policy: warn on high-risk components
   xray_post "Operational risk policy created" \
     "$JFROG_URL/xray/api/v2/policies?projectKey=$PROJECT_KEY" \
     "{
       \"name\": \"${TEAM}-operational-policy\",
       \"type\": \"operational_risk\",
-      \"rules\": [
-        {
-          \"name\": \"warn-eol\",
-          \"priority\": 1,
-          \"criteria\": {\"op_risk_custom\": {\"use_and_condition\": false, \"is_eol\": true}},
-          \"actions\": {\"fail_build\": false}
-        },
-        {
-          \"name\": \"warn-no-updates\",
-          \"priority\": 2,
-          \"criteria\": {\"op_risk_custom\": {
-            \"use_and_condition\": false,
-            \"newer_versions_exists\": true,
-            \"release_date_greater_than_months\": 36
-          }},
-          \"actions\": {\"fail_build\": false}
+      \"rules\": [{
+        \"name\": \"warn-op-risk\",
+        \"priority\": 1,
+        \"criteria\": {\"op_risk_min_risk\": \"High\"},
+        \"actions\": {
+          \"fail_build\": false,
+          \"notify_deployer\": true,
+          \"notify_watch_recipients\": true
         }
-      ]
+      }]
     }"
 
   step "Creating Xray watch"
-  # Delete existing watch before recreating with updated policy assignments.
-  curl -s -o /dev/null \
-    -H "Authorization: Bearer $JFROG_TOKEN" \
-    -X DELETE "$JFROG_URL/xray/api/v2/watches/${TEAM}-watch?projectKey=$PROJECT_KEY" \
-    2>/dev/null || true
-
   # Watch all repos matching swiftship-.* via regex, assigned to all three policies.
   xray_post "Xray watch created" \
     "$JFROG_URL/xray/api/v2/watches?projectKey=$PROJECT_KEY" \
