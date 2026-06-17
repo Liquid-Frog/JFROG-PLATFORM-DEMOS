@@ -27,21 +27,34 @@ MODE="${1:-all}"
 step()   { echo; echo "━━━ $1"; }
 ok()     { echo "  ✅  $1"; }
 skip()     { echo "  ⏭️   $1 (already exists)"; }
-repo_put() {
-  local LABEL=$1 KEY=$2 PAYLOAD=$3
-  local TMPFILE STATUS
+repo_upsert() {
+  local KEY=$1 PAYLOAD=$2
+  local TMPFILE CHECK METHOD STATUS BODY
   TMPFILE=$(mktemp)
+  # GET to decide PUT (create) vs POST (update)
+  CHECK=$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer $JFROG_TOKEN" \
+    "$JFROG_URL/artifactory/api/repositories/$KEY" 2>/dev/null)
+  [[ "$CHECK" == "200" ]] && METHOD="POST" || METHOD="PUT"
   STATUS=$(curl -s -o "$TMPFILE" -w "%{http_code}" \
     -H "Authorization: Bearer $JFROG_TOKEN" \
     -H "Content-Type: application/json" \
-    -X PUT "$JFROG_URL/artifactory/api/repositories/$KEY" \
+    -X "$METHOD" "$JFROG_URL/artifactory/api/repositories/$KEY" \
     -d "$PAYLOAD" 2>/dev/null)
+  BODY=$(cat "$TMPFILE"); rm -f "$TMPFILE"
   if [[ "$STATUS" == "200" || "$STATUS" == "201" ]]; then
-    ok "$LABEL: $KEY"
+    if [[ "$METHOD" == "PUT" ]]; then
+      echo "  ✅  Created $KEY"; REPO_CREATED=$((REPO_CREATED + 1))
+    else
+      echo "  ✅  Updated $KEY"; REPO_UPDATED=$((REPO_UPDATED + 1))
+    fi
+  elif [[ "$STATUS" == "400" ]] && echo "$BODY" | grep -qi "already exists"; then
+    echo "  ⏭️   $KEY (skip — use POST next run)"
+    REPO_SKIPPED=$((REPO_SKIPPED + 1))
   else
-    echo "  ⚠️  $KEY returned HTTP $STATUS: $(cat "$TMPFILE")"
+    echo "  ⚠️   $KEY: HTTP $STATUS: $BODY"
+    REPO_ERRORS=$((REPO_ERRORS + 1))
   fi
-  rm -f "$TMPFILE"
 }
 xray_post() {
   local LABEL=$1 URL=$2 DATA=$3
@@ -99,43 +112,46 @@ ok "JFrog CLI server configured (id: $JF_SERVER_ID)"
 if [[ "$MODE" == "all" || "$MODE" == "--packages" ]]; then
   PREFIX="${JFROG_REPO_PREFIX:-swiftship}"
   step "Creating Artifactory repositories (${PREFIX}-{pkg}-{maturity}-{locator})"
+  REPO_CREATED=0; REPO_UPDATED=0; REPO_SKIPPED=0; REPO_ERRORS=0
 
   for PKG in maven gradle npm pypi docker go nuget helm; do
     case $PKG in
-      maven|gradle) LAYOUT="maven-2-default" ; UPSTREAM="https://repo1.maven.org/maven2" ;;
-      npm)          LAYOUT="npm-default"      ; UPSTREAM="https://registry.npmjs.org" ;;
-      pypi)         LAYOUT="simple-default"   ; UPSTREAM="https://pypi.org" ;;
-      docker)       LAYOUT="simple-default"   ; UPSTREAM="https://registry-1.docker.io" ;;
-      go)           LAYOUT="go-default"       ; UPSTREAM="https://proxy.golang.org" ;;
-      nuget)        LAYOUT="nuget-default"    ; UPSTREAM="https://api.nuget.org/v3/index.json" ;;
-      helm)         LAYOUT="simple-default"   ; UPSTREAM="https://charts.helm.sh/stable" ;;
+      maven|gradle) LAYOUT="maven-2-default" ; UPSTREAM="https://repo1.maven.org/maven2" ; NUGET_EXTRA="" ;;
+      npm)          LAYOUT="npm-default"      ; UPSTREAM="https://registry.npmjs.org"     ; NUGET_EXTRA="" ;;
+      pypi)         LAYOUT="simple-default"   ; UPSTREAM="https://pypi.org"               ; NUGET_EXTRA="" ;;
+      docker)       LAYOUT="simple-default"   ; UPSTREAM="https://registry-1.docker.io"   ; NUGET_EXTRA="" ;;
+      go)           LAYOUT="go-default"       ; UPSTREAM="https://proxy.golang.org"       ; NUGET_EXTRA="" ;;
+      nuget)        LAYOUT="nuget-default"    ; UPSTREAM="https://www.nuget.org"
+                    NUGET_EXTRA=", \"feedContextPath\": \"api/v2\", \"downloadContextPath\": \"api/v2/package\", \"v3FeedUrl\": \"https://api.nuget.org/v3/index.json\"" ;;
+      helm)         LAYOUT="simple-default"   ; UPSTREAM="https://charts.helm.sh/stable"  ; NUGET_EXTRA="" ;;
     esac
 
     for MATURITY in dev stage prod; do
       case $MATURITY in
-        dev)   ENV_TAG="DEV"  ;;
-        stage) ENV_TAG="TEST" ;;
-        prod)  ENV_TAG="PROD" ;;
+        dev)   ENV_TAG="DEV"            ;;
+        stage) ENV_TAG="swiftship-Test" ;;
+        prod)  ENV_TAG="PROD"           ;;
       esac
 
       LOCAL="${PREFIX}-${PKG}-${MATURITY}-local"
       REMOTE="${PREFIX}-${PKG}-${MATURITY}-remote"
       VIRTUAL="${PREFIX}-${PKG}-${MATURITY}-virtual"
 
-      # projectKey and environments are omitted entirely when JFROG_PROJECT_KEY is unset
+      # projectKey and environments omitted entirely when JFROG_PROJECT_KEY is unset
       if [[ -n "${JFROG_PROJECT_KEY:-}" ]]; then
         PROJ=", \"projectKey\": \"$JFROG_PROJECT_KEY\", \"environments\": [\"$ENV_TAG\"]"
       else
         PROJ=""
       fi
 
-      repo_put "local" "$LOCAL" \
+      repo_upsert "$LOCAL" \
         "{\"key\":\"$LOCAL\",\"rclass\":\"local\",\"packageType\":\"$PKG\",\"repoLayoutRef\":\"$LAYOUT\",\"xrayIndex\":true,\"description\":\"SwiftShip $PKG $MATURITY local repository\"$PROJ}"
 
-      repo_put "remote" "$REMOTE" \
-        "{\"key\":\"$REMOTE\",\"rclass\":\"remote\",\"packageType\":\"$PKG\",\"repoLayoutRef\":\"$LAYOUT\",\"url\":\"$UPSTREAM\",\"xrayIndex\":true,\"description\":\"SwiftShip $PKG $MATURITY remote proxy\"$PROJ}"
+      repo_upsert "$REMOTE" \
+        "{\"key\":\"$REMOTE\",\"rclass\":\"remote\",\"packageType\":\"$PKG\",\"repoLayoutRef\":\"$LAYOUT\",\"url\":\"$UPSTREAM\"$NUGET_EXTRA,\"xrayIndex\":true,\"description\":\"SwiftShip $PKG $MATURITY remote proxy\"$PROJ}"
 
-      repo_put "virtual" "$VIRTUAL" \
+      # Virtual: members are the local + remote just created above
+      repo_upsert "$VIRTUAL" \
         "{\"key\":\"$VIRTUAL\",\"rclass\":\"virtual\",\"packageType\":\"$PKG\",\"repoLayoutRef\":\"$LAYOUT\",\"repositories\":[\"$LOCAL\",\"$REMOTE\"],\"defaultDeploymentRepo\":\"$LOCAL\",\"description\":\"SwiftShip $PKG $MATURITY virtual repository\"$PROJ}"
     done
   done
@@ -158,9 +174,12 @@ if [[ "$MODE" == "all" || "$MODE" == "--packages" ]]; then
     PKG="${SPEC%%:*}"
     RTYPE="${SPEC##*:}"
     REPO="${PREFIX}-${PKG}-local"
-    repo_put "local" "$REPO" \
+    repo_upsert "$REPO" \
       "{\"key\":\"$REPO\",\"rclass\":\"local\",\"packageType\":\"$RTYPE\",\"xrayIndex\":true,\"description\":\"SwiftShip $PKG repository\"$AIML_PROJ}"
   done
+
+  echo
+  echo "  Repo summary — Created: $REPO_CREATED  Updated: $REPO_UPDATED  Skipped: $REPO_SKIPPED  Errors: $REPO_ERRORS"
 fi
 
 # ── Xray watches + policies ──────────────────────────────────────
