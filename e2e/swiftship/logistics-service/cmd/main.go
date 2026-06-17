@@ -6,6 +6,15 @@ import (
 	"log"
 	"net/http"
 	"os"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/net/http2"
+)
+
+// VULN-SEED: imported to demonstrate CVE-2025-22869 and CVE-2023-44487
+var (
+	_ *ssh.ServerConfig // golang.org/x/crypto/ssh — CVE-2025-22869
+	_ *http2.Server     // golang.org/x/net/http2  — CVE-2023-44487
 )
 
 type HealthResponse struct {
