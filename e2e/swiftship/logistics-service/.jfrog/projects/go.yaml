@@ -1,0 +1,7 @@
+# serverId must match your JFrog CLI server ID
+# Run: jf c show — to see your configured server IDs
+version: 1
+type: go
+resolver:
+    repo: swiftship-go-dev-virtual
+    serverId: LiquidJedi

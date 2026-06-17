@@ -74,6 +74,11 @@ jfrog-platform-demos/
 - GitHub account with Frogbot permissions
 - For MCP mode: JFrog MCP Server enabled ([docs](https://docs.jfrog.com/integrations/docs/enable-the-jfrog-mcp-server))
 
+> **Important:** Before running `prep.sh`, ensure `JF_SERVER_ID` in `.env` matches
+> your configured JFrog CLI server ID (run: `jf c show`). Each SwiftShip service
+> has a `.jfrog/projects/` config that routes dependency resolution through
+> Artifactory — the `serverId` in those files must match your CLI server ID.
+
 ## Before you start
 
 Run `jf c show` to see your configured JFrog CLI servers.

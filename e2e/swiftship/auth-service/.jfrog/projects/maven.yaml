@@ -1,0 +1,12 @@
+# serverId must match your JFrog CLI server ID
+# Run: jf c show — to see your configured server IDs
+version: 1
+type: maven
+resolver:
+    snapshotRepo: swiftship-maven-dev-virtual
+    releaseRepo: swiftship-maven-dev-virtual
+    serverId: LiquidJedi
+deployer:
+    snapshotRepo: swiftship-maven-dev-local
+    releaseRepo: swiftship-maven-dev-local
+    serverId: LiquidJedi
